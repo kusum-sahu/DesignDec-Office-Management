@@ -1,11 +1,13 @@
 //! Authentication ke saare routes ko ek jagah manage karta hai.
 import express from "express";
-
 import {
-  login,
-  logout,
-  getMe,
-  // createAdmin,
+    login,
+    logout,
+    getMe,
+    changePassword,
+    forgotPassword,
+    verifyOTP,
+    resetPassword,
 } from "../controllers/auth.controller.js";
 
 import { protect } from "../middleware/auth.middleware.js";
@@ -22,5 +24,25 @@ router.get("/logout", logout);
 
 //! Logged In Employee Details (GET : /api/v1/auth/me)
 router.get("/me", protect, getMe);
+router.put(
+    "/change-password",
+    protect,
+    changePassword
+);
+
+router.post(
+    "/forgot-password",
+    forgotPassword
+);
+
+router.post(
+    "/verify-otp",
+    verifyOTP
+);
+
+router.post(
+    "/reset-password",
+    resetPassword
+);
 
 export default router;

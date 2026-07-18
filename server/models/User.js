@@ -8,6 +8,7 @@ const userSchema = new mongoose.Schema(
       required: true,
       unique: true,
       trim: true,
+      immutable: true,
     },
 
     name: {
@@ -80,6 +81,28 @@ const userSchema = new mongoose.Schema(
 },isVerified: {
   type: Boolean,
   default: true,
+},
+passwordResetOTP: {
+  type: String,
+  default: null,
+},
+
+passwordResetOTPExpire: {
+  type: Date,
+  default: null,
+},
+passwordResetRequestedAt: {
+  type: Date,
+  default: null,
+},
+passwordResetAttempts: {
+  type: Number,
+  default: 0,
+},
+
+passwordResetBlockedUntil: {
+  type: Date,
+  default: null,
 },
   },
   {
