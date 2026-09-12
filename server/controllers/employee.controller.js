@@ -6,7 +6,7 @@ import sendEmail from "../utils/sendEmail.js";
 
 export const createEmployee = async (req, res) => {
   try {
-    const { name, email, phone, department, designation } = req.body;
+    const { name, email, phone, department, designation, branch } = req.body;
 
     // Required Fields Validation
     if (!name || !email) {
@@ -22,6 +22,19 @@ export const createEmployee = async (req, res) => {
         success: false,
         message: "Please enter a valid email address.",
       });
+    }
+
+    // Branch Validation (if provided)
+    const allowedBranches = ["Main Office", "Santoshpur Branch"];
+    let employeeBranch = null;
+    if (branch !== undefined && branch !== null && branch !== "") {
+      if (!allowedBranches.includes(branch)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid branch '${branch}'. Allowed branches: ${allowedBranches.join(", ")}`,
+        });
+      }
+      employeeBranch = branch;
     }
 
     // Check Duplicate Email
@@ -49,6 +62,7 @@ export const createEmployee = async (req, res) => {
       phone,
       department,
       designation,
+      branch: employeeBranch,
       role: "Employee",
       status: "Active",
       isPasswordChanged: false,
@@ -76,6 +90,7 @@ export const createEmployee = async (req, res) => {
         phone: employee.phone,
         department: employee.department,
         designation: employee.designation,
+        branch: employee.branch,
         role: employee.role,
         status: employee.status,
         joiningDate: employee.joiningDate,
@@ -127,6 +142,10 @@ export const getEmployees = async (req, res) => {
         { designation: { $regex: search, $options: "i" } },
       ],
     };
+
+    if (req.query.branch) {
+      filter.branch = req.query.branch;
+    }
 
   //get employees
 
@@ -197,7 +216,7 @@ export const getEmployeeById = async (req, res) => {
 
 export const updateEmployee = async (req, res) => {
   try {
-    const { name, email, phone, department, designation, status } = req.body;
+    const { name, email, phone, department, designation, status, branch } = req.body;
 
     const employee = await User.findOne({
       employeeId: req.params.employeeId,
@@ -232,6 +251,21 @@ const existingEmployee = await User.findOne({
       }
 
       employee.email = email;
+    }
+
+    if (branch !== undefined) {
+      if (branch !== null && branch !== "") {
+        const allowedBranches = ["Main Office", "Santoshpur Branch"];
+        if (!allowedBranches.includes(branch)) {
+          return res.status(400).json({
+            success: false,
+            message: `Invalid branch '${branch}'. Allowed branches: ${allowedBranches.join(", ")}`,
+          });
+        }
+        employee.branch = branch;
+      } else {
+        employee.branch = null;
+      }
     }
 
     employee.name = name || employee.name;

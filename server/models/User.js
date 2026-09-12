@@ -58,6 +58,18 @@ const userSchema = new mongoose.Schema(
       default: "Employee",
     },
 
+    branch: {
+      type: String,
+      trim: true,
+      default: null,
+      validate: {
+        validator: function (v) {
+          return v === null || v === undefined || ["Main Office", "Santoshpur Branch"].includes(v);
+        },
+        message: (props) => `${props.value} is not a valid branch. Must be 'Main Office' or 'Santoshpur Branch'.`
+      },
+    },
+
     status: {
       type: String,
       enum: ["Active", "Inactive"],

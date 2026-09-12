@@ -2,10 +2,12 @@ import dotenv from "dotenv";
 // import "dotenv/config";
 import app from "./app.js";
 import connectDB from "./config/db.js";
-
+import { initDeadlineCron } from "./jobs/deadlineCron.js";
 dotenv.config();
 // Connect Database
 connectDB();
+
+initDeadlineCron();
 
 const PORT = process.env.PORT || 5000;
 

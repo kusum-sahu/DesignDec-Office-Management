@@ -162,7 +162,7 @@ export const changePassword = async (req, res) => {
 //! Forgot Password
 export const forgotPassword = async (req, res) => {
   try {
-    const { email } = req.body;
+    const { employeeId,email } = req.body;
 
     if (!email) {
       return res.status(400).json({
@@ -171,7 +171,7 @@ export const forgotPassword = async (req, res) => {
       });
     }
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ employeeId,email });
     //for wait 60 seconds before requesting another OTP
     if (
       user &&
@@ -335,7 +335,13 @@ export const resetPassword = async (req, res) => {
         message: "If an account with this email exists, an OTP has been sent.",
       });
     }
-    if (user.passwordResetOTP !== otp) {
+    // 🔐 HASHED OTP CHECK HERE
+    const hashedOTP = crypto
+      .createHash("sha256")
+      .update(otp.toString()) // string format ensure karna safe hota hai
+      .digest("hex");
+
+    if (user.passwordResetOTP !== hashedOTP) {
       return res.status(400).json({
         success: false,
         message: "Invalid OTP.",

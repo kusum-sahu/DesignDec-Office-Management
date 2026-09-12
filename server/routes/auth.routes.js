@@ -20,7 +20,8 @@ const router = express.Router();
 router.post("/login", login);
 
 //! Employee Logout (GET : /api/v1/auth/logout)
-router.get("/logout", logout);
+// router.get("/logout", logout);
+router.post("/logout", logout);
 
 //! Logged In Employee Details (GET : /api/v1/auth/me)
 router.get("/me", protect, getMe);

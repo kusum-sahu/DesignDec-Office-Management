@@ -6,6 +6,8 @@ import authRoutes from "./routes/auth.routes.js";
 import employeeRoutes from "./routes/employee.routes.js";
 import attendanceRoutes from "./routes/attendance.routes.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
+import orderRoutes from "./routes/order.routes.js";
+import notificationRoutes from "./routes/notification.routes.js";
 import path from "path";
 
 const app = express();
@@ -33,4 +35,6 @@ app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/employees", employeeRoutes);
 app.use("/api/v1/attendance", attendanceRoutes);
 app.use("/api/v1/dashboard", dashboardRoutes);
+app.use("/api/v1/orders", orderRoutes);
+app.use("/api/v1/notifications", notificationRoutes);
 export default app;
