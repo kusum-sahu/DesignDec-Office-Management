@@ -21,7 +21,7 @@ const notificationSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["NEW_BRANCH_ORDER", "DEADLINE_ALERT", "PAYMENT_ALERT", "STATUS_UPDATE"],
+      enum: ["NEW_BRANCH_ORDER", "NEW_ORDER", "DEADLINE_ALERT", "PAYMENT_ALERT", "STATUS_UPDATE"],
       required: true
     },
     order: {

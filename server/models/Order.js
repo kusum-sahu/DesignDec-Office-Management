@@ -1,12 +1,44 @@
 import mongoose from "mongoose";
 
+export const PREDEFINED_ITEM_TYPES = [
+  "Flex Banner",
+  "Sticker",
+  "Visiting Cards",
+  "Letter Pad",
+  "Lighting Board",
+  "Aluminum Panel",
+  "Invitaion Cards",
+  "Glow Sign Board",
+  "Leaflate",
+  "Wedding Cards",
+  "Name Board",
+  "Video Graphy & Editing",
+  "Photography",
+  "Digital Calling Cards",
+  "Digital Invitations",
+  "Logo Design",
+  "Social Media Posts",
+  "Calendar",
+  "Diary",
+  "Banner Printing",
+  "Brochure",
+  "Photo Frame",
+  "Abstract Art Frame",
+  "Menu Card",
+  "Bill Book",
+  "ID Cards",
+  "Customized Mug Printing",
+  "Dress Printing",
+  "Bags Printing",
+  "2D/3D LED Letter Signage"
+];
+
 const orderSchema = new mongoose.Schema(
   {
     orderNumber: {
       type: String,
       unique: true,
       required: true,
-      default: () => "ORD-" + Date.now().toString().slice(-6)
     },
      idempotencyKey: {
       type: String,
@@ -20,22 +52,16 @@ const orderSchema = new mongoose.Schema(
     },
     contactNo: {
       type: String,
-      required: [true, "Customer contact number is required"],
-      trim: true
+      required: false,
+      trim: true,
+      default: ""
     },
     itemType: {
       type: String,
-      required: true,
-      enum: [
-        "Flex Banner",
-        "Lighting Board",
-        "Glow Sign Board",
-        "Bill Book",
-        "ID Card",
-        "Visiting Card",
-        "Brochure",
-        "Other"
-      ]
+      required: [true, "Item type is required"],
+      trim: true,
+      minlength: [1, "Item type cannot be empty"],
+      maxlength: [120, "Item type cannot exceed 120 characters"]
     },
     description: {
       type: String,
@@ -97,10 +123,24 @@ const orderSchema = new mongoose.Schema(
       enum: ["Pending", "Partial", "Paid"],
       default: "Pending"
     },
+    isDeleted: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    deletedAt: {
+      type: Date,
+      default: null,
+    },
+    deletedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User"
-    }
+      ref: "User",
+    },
   },
   { timestamps: true }
 );

@@ -1,9 +1,113 @@
 import Attendance from "../models/Attendance.js";
 import User from "../models/User.js";
+import AttendanceSetting from "../models/AttendanceSetting.js";
+import AttendanceCorrection from "../models/AttendanceCorrection.js";
 import getAttendanceStatus from "../utils/getAttendanceStatus.js";
 import calculateWorkingHours from "../utils/calculateWorkingHours.js";
 import calculateOvertime from "../utils/calculateOvertime.js";
 import formatDateTime from "../utils/formatDateTime.js";
+import { verifyOfficeGeofence } from "../utils/geofence.js";
+
+/**
+ * Helper to detect incomplete previous-day attendance for an employee.
+ * Finds any past attendance record where checkIn exists but checkOut is null/missing.
+ */
+export const findIncompletePreviousAttendance = async (employeeId, startOfToday) => {
+  try {
+    // Find past incomplete attendances where checkIn exists but checkOut is null/missing
+    const incompleteRecords = await Attendance.find({
+      employee: employeeId,
+      attendanceDate: { $lt: startOfToday },
+      "checkIn.time": { $exists: true, $ne: null },
+      $or: [{ "checkOut.time": null }, { "checkOut.time": { $exists: false } }],
+    })
+      .sort({ attendanceDate: -1 })
+      .lean();
+
+    if (!incompleteRecords || incompleteRecords.length === 0) return null;
+
+    for (const incomplete of incompleteRecords) {
+      // If the attendance already has hasPendingCorrection flag, skip warning
+      if (incomplete.hasPendingCorrection) {
+        continue;
+      }
+
+      // Check if there is an active Pending correction request for this attendance
+      const pendingCorrection = await AttendanceCorrection.findOne({
+        attendance: incomplete._id,
+        status: "Pending",
+      }).lean();
+
+      if (pendingCorrection) {
+        continue;
+      }
+
+      const d = new Date(incomplete.attendanceDate);
+      const dateFormatted = d.toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+
+      return {
+        attendanceId: incomplete._id,
+        attendanceDate: incomplete.attendanceDate,
+        dateFormatted,
+        checkInTime: incomplete.checkIn?.time,
+        hasPendingCorrection: false,
+        pendingCorrectionId: null,
+        warningMessage: `You didn’t check out on ${dateFormatted}. Please submit a correction request.`,
+      };
+    }
+
+    return null;
+  } catch (err) {
+    console.error("Error finding incomplete previous attendance:", err);
+    return null;
+  }
+};
+
+//! GET LOGGED-IN EMPLOYEE'S TODAY ATTENDANCE API
+export const getMyTodayAttendance = async (req, res) => {
+  try {
+    const employee = await User.findById(req.user._id).select("-password");
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: "Employee not found.",
+      });
+    }
+
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+    const [attendance, incompletePrevious] = await Promise.all([
+      Attendance.findOne({
+        employee: employee._id,
+        attendanceDate: { $gte: startOfToday, $lte: endOfToday },
+      }).lean(),
+      findIncompletePreviousAttendance(employee._id, startOfToday),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      message: "Today's attendance fetched successfully.",
+      data: attendance || null,
+      isCheckedIn: Boolean(attendance?.checkIn?.time),
+      isCheckedOut: Boolean(attendance?.checkOut?.time),
+      incompletePreviousAttendance: incompletePrevious || null,
+      warning: incompletePrevious?.warningMessage || null,
+    });
+  } catch (error) {
+    console.error("Get Today Attendance Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
 
 //! CHECK-IN API
 export const checkIn = async (req, res) => {
@@ -31,7 +135,7 @@ export const checkIn = async (req, res) => {
       });
     }
 
-    const { latitude, longitude, address } = req.body;
+    const { latitude, longitude, accuracy, address } = req.body;
     // Latitude Validation
     if (latitude === undefined || latitude === null) {
       return res.status(400).json({
@@ -40,7 +144,7 @@ export const checkIn = async (req, res) => {
       });
     }
     // Longitude Validation
-    if (latitude === undefined || latitude === null) {
+    if (longitude === undefined || longitude === null) {
       return res.status(400).json({
         success: false,
         message: "Longitude is required.",
@@ -48,6 +152,10 @@ export const checkIn = async (req, res) => {
     }
     const lat = Number(latitude);
     const lng = Number(longitude);
+    const acc =
+      accuracy !== undefined && accuracy !== null && !isNaN(Number(accuracy))
+        ? Number(accuracy)
+        : null;
 
     if (
       Number.isNaN(lat) ||
@@ -63,25 +171,52 @@ export const checkIn = async (req, res) => {
       });
     }
 
+    // Geofence Validation against assigned/selected office: validate accuracy first, then distance
+    const branchName = employee.branch || "Main Office";
+    const geofence = await verifyOfficeGeofence(branchName, lat, lng, acc);
+    if (!geofence.isValid) {
+      if (geofence.isAccuracyTooLow) {
+        return res.status(400).json({
+          success: false,
+          code: "GPS_ACCURACY_TOO_LOW",
+          message: geofence.message,
+          accuracy: geofence.accuracy,
+          maxAllowedAccuracy: geofence.maxAllowedAccuracy,
+        });
+      }
+      return res.status(403).json({
+        success: false,
+        code: "OUTSIDE_GEOFENCE",
+        message: geofence.message,
+        distance: geofence.distance,
+        allowedRadius: geofence.allowedRadius,
+        branch: geofence.branchName,
+      });
+    }
+
     const formattedAddress = address?.trim() || "";
-    // Duplicate Check
-    const attendanceDate = new Date();
-    attendanceDate.setHours(0, 0, 0, 0);
+
+    // Duplicate Check using full-day boundary
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
     const alreadyCheckedIn = await Attendance.findOne({
       employee: employee._id,
-      attendanceDate,
+      attendanceDate: { $gte: startOfToday, $lte: endOfToday },
     });
 
     if (alreadyCheckedIn) {
       return res.status(409).json({
         success: false,
-        message: "You have already checked in today.",
+        message: "You have already checked in today. Please check out instead.",
+        action: "CHECK_OUT",
+        data: alreadyCheckedIn,
       });
     }
 
     const checkInTime = new Date();
 
-    // ⭐ Add Here if multer this type of code is used ....Cloudinary ya AWS S3 migrate karne me bhi easy rahega. uploads/checkin/17528453655-photo.jpg
     const photoPath = req.file.path.replace(/\\/g, "/");
     const ipAddress =
       req.headers["x-forwarded-for"]?.split(",")[0] ||
@@ -96,12 +231,13 @@ export const checkIn = async (req, res) => {
     const device = req.headers["user-agent"] || "Unknown Device";
     const attendance = await Attendance.create({
       employee: employee._id,
-      attendanceDate,
+      attendanceDate: startOfToday,
       checkIn: {
         time: checkInTime,
         location: {
           latitude: lat,
           longitude: lng,
+          accuracy: acc,
           address: formattedAddress,
         },
         photo: photoPath,
@@ -114,6 +250,11 @@ export const checkIn = async (req, res) => {
       attendanceStatus,
       isLate,
     });
+    const incompletePrevious = await findIncompletePreviousAttendance(
+      employee._id,
+      startOfToday
+    );
+
     return res.status(201).json({
       success: true,
       message: "Check-in successful.",
@@ -129,6 +270,8 @@ export const checkIn = async (req, res) => {
         workingHours: attendance.workingHours,
         location: attendance.checkIn.location,
       },
+      incompletePreviousAttendance: incompletePrevious || null,
+      warning: incompletePrevious?.warningMessage || null,
     });
   } catch (error) {
     console.error("Check-In Error:", error);
@@ -183,7 +326,7 @@ export const checkOut = async (req, res) => {
     // GPS Validation
     // ===========================================
 
-    const { latitude, longitude, address } = req.body;
+    const { latitude, longitude, accuracy, address } = req.body;
 
     if (latitude === undefined || latitude === null) {
       return res.status(400).json({
@@ -201,6 +344,10 @@ export const checkOut = async (req, res) => {
 
     const lat = Number(latitude);
     const lng = Number(longitude);
+    const acc =
+      accuracy !== undefined && accuracy !== null && !isNaN(Number(accuracy))
+        ? Number(accuracy)
+        : null;
 
     if (
       Number.isNaN(lat) ||
@@ -216,14 +363,38 @@ export const checkOut = async (req, res) => {
       });
     }
 
+    // Geofence Validation against assigned/selected office: validate accuracy first, then distance
+    const branchName = employee.branch || "Main Office";
+    const geofence = await verifyOfficeGeofence(branchName, lat, lng, acc);
+    if (!geofence.isValid) {
+      if (geofence.isAccuracyTooLow) {
+        return res.status(400).json({
+          success: false,
+          code: "GPS_ACCURACY_TOO_LOW",
+          message: geofence.message,
+          accuracy: geofence.accuracy,
+          maxAllowedAccuracy: geofence.maxAllowedAccuracy,
+        });
+      }
+      return res.status(403).json({
+        success: false,
+        code: "OUTSIDE_GEOFENCE",
+        message: geofence.message,
+        distance: geofence.distance,
+        allowedRadius: geofence.allowedRadius,
+        branch: geofence.branchName,
+      });
+    }
+
     // ===========================================
     // Common Variables
     // ===========================================
 
     const formattedAddress = address?.trim() || "";
 
-    const attendanceDate = new Date();
-    attendanceDate.setHours(0, 0, 0, 0);
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
 
     const checkOutTime = new Date();
 
@@ -241,13 +412,14 @@ export const checkOut = async (req, res) => {
 
     const attendance = await Attendance.findOne({
       employee: employee._id,
-      attendanceDate,
+      attendanceDate: { $gte: startOfToday, $lte: endOfToday },
     });
 
     if (!attendance) {
       return res.status(404).json({
         success: false,
         message: "No check-in record found for today. Please check in first.",
+        action: "CHECK_IN",
       });
     }
 
@@ -255,10 +427,11 @@ export const checkOut = async (req, res) => {
     // Check-In Validation
     // ===========================================
 
-    if (!attendance.checkIn.time) {
+    if (!attendance.checkIn?.time) {
       return res.status(400).json({
         success: false,
         message: "Check-in is not completed.",
+        action: "CHECK_IN",
       });
     }
 
@@ -266,10 +439,12 @@ export const checkOut = async (req, res) => {
     // Prevent Double Check-Out
     // ===========================================
 
-    if (attendance.checkOut.time) {
+    if (attendance.checkOut?.time) {
       return res.status(409).json({
         success: false,
         message: "You have already checked out today.",
+        action: "COMPLETED",
+        data: attendance,
       });
     }
 
@@ -294,6 +469,7 @@ export const checkOut = async (req, res) => {
       location: {
         latitude: lat,
         longitude: lng,
+        accuracy: acc,
         address: formattedAddress,
       },
 
@@ -656,3 +832,644 @@ summary.totalOvertimeHours = Number(
         });
     }
 };
+
+//! GET ATTENDANCE SETTINGS API
+export const getAttendanceSettings = async (req, res) => {
+  try {
+    let setting = await AttendanceSetting.findOne({ isActive: true });
+    if (!setting) {
+      setting = await AttendanceSetting.create({});
+    }
+    return res.status(200).json({
+      success: true,
+      message: "Attendance settings fetched successfully.",
+      data: setting,
+    });
+  } catch (error) {
+    console.error("Get Attendance Settings Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+};
+
+//! UPDATE BRANCH OFFICE LOCATION API (Admin Only)
+export const updateBranchLocation = async (req, res) => {
+  try {
+    if (req.user.role !== "Admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Only Admins can update branch office coordinates.",
+      });
+    }
+
+    const { branchName, latitude, longitude, radius, address } = req.body;
+    if (!branchName || latitude === undefined || longitude === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: "branchName, latitude, and longitude are required.",
+      });
+    }
+
+    const lat = Number(latitude);
+    const lng = Number(longitude);
+    const rad = radius !== undefined ? Number(radius) : 200;
+
+    if (
+      Number.isNaN(lat) ||
+      Number.isNaN(lng) ||
+      lat < -90 ||
+      lat > 90 ||
+      lng < -180 ||
+      lng > 180
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid GPS coordinates.",
+      });
+    }
+
+    let setting = await AttendanceSetting.findOne({ isActive: true });
+    if (!setting) {
+      setting = await AttendanceSetting.create({});
+    }
+
+    if (!Array.isArray(setting.branchLocations) || setting.branchLocations.length === 0) {
+      setting.branchLocations = [
+        {
+          branchName: "Main Office",
+          latitude: 19.314962,
+          longitude: 84.794091,
+          radius: 200,
+          address: "Main Office, Berhampur, Ganjam, Odisha",
+        },
+        {
+          branchName: "Santoshpur Branch",
+          latitude: 20.25880,
+          longitude: 85.78840,
+          radius: 200,
+          address: "Santoshpur Branch, Odisha",
+        },
+      ];
+    }
+
+    const existingIndex = setting.branchLocations.findIndex(
+      (b) => b.branchName.toLowerCase() === branchName.trim().toLowerCase()
+    );
+
+    const updatedEntry = {
+      branchName: branchName.trim(),
+      latitude: lat,
+      longitude: lng,
+      radius: rad,
+      address: address ? address.trim() : "",
+    };
+
+    if (existingIndex >= 0) {
+      setting.branchLocations[existingIndex] = updatedEntry;
+    } else {
+      setting.branchLocations.push(updatedEntry);
+    }
+
+    await setting.save();
+
+    return res.status(200).json({
+      success: true,
+      message: `Office location for '${branchName}' updated successfully.`,
+      data: updatedEntry,
+    });
+  } catch (error) {
+    console.error("Update Branch Location Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+};
+
+//! GET INCOMPLETE ATTENDANCE FOR LOGGED-IN EMPLOYEE
+export const getIncompleteAttendance = async (req, res) => {
+  try {
+    const employee = await User.findById(req.user._id).select("-password");
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: "Employee not found.",
+      });
+    }
+
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+
+    const incompleteRecords = await Attendance.find({
+      employee: employee._id,
+      attendanceDate: { $lt: startOfToday },
+      "checkIn.time": { $exists: true, $ne: null },
+      $or: [{ "checkOut.time": null }, { "checkOut.time": { $exists: false } }],
+    })
+      .sort({ attendanceDate: -1 })
+      .lean();
+
+    // Fetch any associated correction requests
+    const attendanceIds = incompleteRecords.map((r) => r._id);
+    const corrections = await AttendanceCorrection.find({
+      attendance: { $in: attendanceIds },
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const correctionMap = {};
+    corrections.forEach((c) => {
+      // keep latest correction per attendance
+      if (!correctionMap[c.attendance.toString()]) {
+        correctionMap[c.attendance.toString()] = c;
+      }
+    });
+
+    const formattedRecords = incompleteRecords.map((r) => {
+      const d = new Date(r.attendanceDate);
+      const dateFormatted = d.toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+      const correction = correctionMap[r._id.toString()] || null;
+      const hasPending = correction?.status === "Pending" || Boolean(r.hasPendingCorrection);
+
+      return {
+        ...r,
+        dateFormatted,
+        warningMessage: hasPending
+          ? null
+          : `You didn’t check out on ${dateFormatted}. Please submit a correction request.`,
+        correctionRequest: correction,
+        hasPendingCorrection: hasPending,
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Incomplete attendance records fetched successfully.",
+      count: formattedRecords.length,
+      data: formattedRecords,
+    });
+  } catch (error) {
+    console.error("Get Incomplete Attendance Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+};
+
+//! SUBMIT CORRECTION REQUEST (Employee Cannot Directly Edit Previous Times)
+export const submitCorrectionRequest = async (req, res) => {
+  try {
+    const { attendanceId, requestedCheckOutTime, requestedCheckInTime, reason } = req.body;
+
+    if (!attendanceId) {
+      return res.status(400).json({
+        success: false,
+        message: "Attendance ID is required.",
+      });
+    }
+
+    if (!reason || !reason.trim() || reason.trim().length < 3) {
+      return res.status(400).json({
+        success: false,
+        message: "Reason is required and must be at least 3 characters.",
+      });
+    }
+
+    if (!requestedCheckOutTime) {
+      return res.status(400).json({
+        success: false,
+        message: "Requested check-out time is required.",
+      });
+    }
+
+    const checkOutDate = new Date(requestedCheckOutTime);
+    if (Number.isNaN(checkOutDate.getTime())) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid requested check-out time format.",
+      });
+    }
+
+    // Future check: checkOut cannot be in the future
+    if (checkOutDate.getTime() > Date.now()) {
+      return res.status(400).json({
+        success: false,
+        message: "Requested check-out time cannot be in the future.",
+      });
+    }
+
+    // Find attendance record
+    const attendance = await Attendance.findById(attendanceId);
+    if (!attendance) {
+      return res.status(404).json({
+        success: false,
+        message: "Attendance record not found.",
+      });
+    }
+
+    // Verify ownership
+    if (attendance.employee.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only submit correction requests for your own attendance.",
+      });
+    }
+
+    // Verify requested checkOut is after checkIn
+    if (attendance.checkIn?.time && checkOutDate <= new Date(attendance.checkIn.time)) {
+      return res.status(400).json({
+        success: false,
+        message: "Requested check-out time must be after the check-in time.",
+      });
+    }
+
+    // Check if there is already a Pending request for this attendance
+    const existingPending = await AttendanceCorrection.findOne({
+      attendance: attendance._id,
+      status: "Pending",
+    });
+
+    if (existingPending) {
+      return res.status(400).json({
+        success: false,
+        message: "A correction request for this attendance record is already pending review.",
+        data: existingPending,
+      });
+    }
+
+    // Create Correction Request with initial audit trail entry
+    const correction = await AttendanceCorrection.create({
+      employee: req.user._id,
+      attendance: attendance._id,
+      attendanceDate: attendance.attendanceDate,
+      requestedCheckOutTime: checkOutDate,
+      requestedCheckInTime: requestedCheckInTime ? new Date(requestedCheckInTime) : null,
+      reason: reason.trim(),
+      status: "Pending",
+      auditTrail: [
+        {
+          action: "REQUEST_SUBMITTED",
+          performedBy: req.user._id,
+          performedByRole: req.user.role || "Employee",
+          timestamp: new Date(),
+          details: {
+            reason: reason.trim(),
+            requestedCheckOutTime: checkOutDate,
+            originalCheckInTime: attendance.checkIn?.time || null,
+          },
+        },
+      ],
+    });
+
+    // Mark attendance as having a pending correction
+    attendance.hasPendingCorrection = true;
+    await attendance.save();
+
+    return res.status(201).json({
+      success: true,
+      message: "Correction request submitted successfully. Awaiting manager approval.",
+      data: correction,
+    });
+  } catch (error) {
+    console.error("Submit Correction Request Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+//! GET LOGGED-IN EMPLOYEE'S CORRECTION REQUESTS
+export const getMyCorrectionRequests = async (req, res) => {
+  try {
+    const requests = await AttendanceCorrection.find({
+      employee: req.user._id,
+    })
+      .populate("correctedBy", "name email role designation")
+      .populate("attendance")
+      .populate("auditTrail.performedBy", "name email role")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      message: "Correction requests fetched successfully.",
+      count: requests.length,
+      data: requests,
+    });
+  } catch (error) {
+    console.error("Get My Correction Requests Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+};
+
+//! GET ALL CORRECTION REQUESTS (Admin & Branch Manager Flow)
+export const getAllCorrectionRequests = async (req, res) => {
+  try {
+    const userRole = req.user.role;
+    const isBranchManager =
+      userRole === "Branch Manager" ||
+      (userRole !== "Admin" && /^\s*branch\s*man?ager\s*$/i.test(req.user.designation || ""));
+
+    if (userRole !== "Admin" && !isBranchManager) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Only Admins and Branch Managers can access correction requests.",
+      });
+    }
+
+    const { status, branch, search } = req.query;
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 15, 1), 100);
+    const skip = (page - 1) * limit;
+
+    // Filter employees based on role & branch
+    let employeeFilter = {};
+
+    if (isBranchManager) {
+      // Scoped strictly to the branch manager's branch
+      const branchName = req.user.branch || "Santoshpur Branch";
+      employeeFilter.branch = branchName;
+    } else if (branch && branch !== "All") {
+      employeeFilter.branch = branch;
+    }
+
+    if (search && search.trim()) {
+      employeeFilter.$or = [
+        { name: { $regex: search.trim(), $options: "i" } },
+        { email: { $regex: search.trim(), $options: "i" } },
+        { employeeId: { $regex: search.trim(), $options: "i" } },
+      ];
+    }
+
+    let matchingEmployeeIds = null;
+    if (Object.keys(employeeFilter).length > 0) {
+      const employees = await User.find(employeeFilter).select("_id");
+      matchingEmployeeIds = employees.map((e) => e._id);
+    }
+
+    const filter = {};
+    if (matchingEmployeeIds !== null) {
+      filter.employee = { $in: matchingEmployeeIds };
+    }
+
+    if (status && status !== "All") {
+      filter.status = status;
+    }
+
+    const [totalRecords, requests] = await Promise.all([
+      AttendanceCorrection.countDocuments(filter),
+      AttendanceCorrection.find(filter)
+        .populate("employee", "name email employeeId department designation branch")
+        .populate("correctedBy", "name email role designation")
+        .populate("attendance")
+        .populate("auditTrail.performedBy", "name email role")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+    ]);
+
+    const totalPages = Math.ceil(totalRecords / limit);
+
+    return res.status(200).json({
+      success: true,
+      message: "Correction requests fetched successfully.",
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalRecords,
+        limit,
+      },
+      data: requests,
+    });
+  } catch (error) {
+    console.error("Get All Correction Requests Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+};
+
+//! APPROVE CORRECTION REQUEST (Admin & Branch Manager)
+export const approveCorrectionRequest = async (req, res) => {
+  try {
+    const userRole = req.user.role;
+    const isBranchManager =
+      userRole === "Branch Manager" ||
+      (userRole !== "Admin" && /^\s*branch\s*man?ager\s*$/i.test(req.user.designation || ""));
+
+    if (userRole !== "Admin" && !isBranchManager) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Only Admins and Branch Managers can approve correction requests.",
+      });
+    }
+
+    const { id } = req.params;
+    const { actionReason } = req.body;
+
+    const correction = await AttendanceCorrection.findById(id).populate("employee");
+    if (!correction) {
+      return res.status(404).json({
+        success: false,
+        message: "Correction request not found.",
+      });
+    }
+
+    if (correction.status !== "Pending") {
+      return res.status(400).json({
+        success: false,
+        message: `This correction request has already been ${correction.status.toLowerCase()}.`,
+      });
+    }
+
+    // Branch Manager scoping check
+    if (isBranchManager) {
+      const managerBranch = req.user.branch || "Santoshpur Branch";
+      const empBranch = correction.employee?.branch;
+      if (empBranch !== managerBranch) {
+        return res.status(403).json({
+          success: false,
+          message: `Access denied. You can only approve correction requests for ${managerBranch}.`,
+        });
+      }
+    }
+
+    // Find and update Attendance
+    const attendance = await Attendance.findById(correction.attendance);
+    if (!attendance) {
+      return res.status(404).json({
+        success: false,
+        message: "Associated attendance record not found.",
+      });
+    }
+
+    const checkInTime = attendance.checkIn?.time;
+    const checkOutTime = new Date(correction.requestedCheckOutTime);
+
+    const workingHours = calculateWorkingHours(checkInTime, checkOutTime);
+    const overtimeHours = calculateOvertime(workingHours);
+
+    // Apply correction to Attendance record
+    attendance.checkOut = {
+      time: checkOutTime,
+      location: attendance.checkOut?.location?.latitude
+        ? attendance.checkOut.location
+        : attendance.checkIn?.location || { address: "Branch Verified" },
+      photo: attendance.checkOut?.photo || "",
+      device: `Manual Correction approved by ${req.user.name}`,
+      ipAddress: "",
+    };
+
+    attendance.workingHours = workingHours;
+    attendance.overtimeHours = overtimeHours;
+    attendance.isManual = true;
+    attendance.manualReason = correction.reason;
+    attendance.approvedBy = req.user._id;
+    attendance.correctedBy = req.user._id;
+    attendance.correctedAt = new Date();
+    attendance.hasPendingCorrection = false;
+    attendance.remarks = `Approved by ${req.user.name} (${req.user.role}). Reason: ${correction.reason}`;
+    attendance.attendanceStatus = attendance.isLate ? "Late" : "Present";
+
+    await attendance.save();
+
+    // Update AttendanceCorrection request
+    correction.status = "Approved";
+    correction.correctedBy = req.user._id;
+    correction.correctedAt = new Date();
+    correction.actionReason = actionReason ? actionReason.trim() : "Approved by Manager";
+    correction.auditTrail.push({
+      action: "APPROVED",
+      performedBy: req.user._id,
+      performedByRole: req.user.role || "Admin",
+      timestamp: new Date(),
+      details: {
+        actionReason: correction.actionReason,
+        checkOutTime,
+        workingHours,
+        overtimeHours,
+      },
+    });
+
+    await correction.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Correction request approved and attendance record updated successfully.",
+      data: {
+        correction,
+        attendance,
+      },
+    });
+  } catch (error) {
+    console.error("Approve Correction Request Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+//! REJECT CORRECTION REQUEST (Admin & Branch Manager)
+export const rejectCorrectionRequest = async (req, res) => {
+  try {
+    const userRole = req.user.role;
+    const isBranchManager =
+      userRole === "Branch Manager" ||
+      (userRole !== "Admin" && /^\s*branch\s*man?ager\s*$/i.test(req.user.designation || ""));
+
+    if (userRole !== "Admin" && !isBranchManager) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Only Admins and Branch Managers can reject correction requests.",
+      });
+    }
+
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    if (!reason || !reason.trim() || reason.trim().length < 3) {
+      return res.status(400).json({
+        success: false,
+        message: "Rejection reason is required and must be at least 3 characters.",
+      });
+    }
+
+    const correction = await AttendanceCorrection.findById(id).populate("employee");
+    if (!correction) {
+      return res.status(404).json({
+        success: false,
+        message: "Correction request not found.",
+      });
+    }
+
+    if (correction.status !== "Pending") {
+      return res.status(400).json({
+        success: false,
+        message: `This correction request has already been ${correction.status.toLowerCase()}.`,
+      });
+    }
+
+    // Branch Manager scoping check
+    if (isBranchManager) {
+      const managerBranch = req.user.branch || "Santoshpur Branch";
+      const empBranch = correction.employee?.branch;
+      if (empBranch !== managerBranch) {
+        return res.status(403).json({
+          success: false,
+          message: `Access denied. You can only reject correction requests for ${managerBranch}.`,
+        });
+      }
+    }
+
+    // Update AttendanceCorrection request
+    correction.status = "Rejected";
+    correction.correctedBy = req.user._id;
+    correction.correctedAt = new Date();
+    correction.actionReason = reason.trim();
+    correction.auditTrail.push({
+      action: "REJECTED",
+      performedBy: req.user._id,
+      performedByRole: req.user.role || "Admin",
+      timestamp: new Date(),
+      details: {
+        rejectionReason: reason.trim(),
+      },
+    });
+
+    await correction.save();
+
+    // Release pending flag on Attendance
+    await Attendance.findByIdAndUpdate(correction.attendance, {
+      hasPendingCorrection: false,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Correction request rejected successfully.",
+      data: correction,
+    });
+  } catch (error) {
+    console.error("Reject Correction Request Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};

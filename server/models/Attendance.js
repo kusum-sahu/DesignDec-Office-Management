@@ -24,6 +24,10 @@ const attendanceSchema = new mongoose.Schema(
       location: {
         latitude: Number,
         longitude: Number,
+        accuracy: {
+          type: Number,
+          default: null,
+        },
         address: {
           type: String,
           default: "",
@@ -55,6 +59,10 @@ const attendanceSchema = new mongoose.Schema(
       location: {
         latitude: Number,
         longitude: Number,
+        accuracy: {
+          type: Number,
+          default: null,
+        },
         address: {
           type: String,
           default: "",
@@ -132,6 +140,22 @@ const attendanceSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       default: null,
+    },
+
+    correctedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    correctedAt: {
+      type: Date,
+      default: null,
+    },
+
+    hasPendingCorrection: {
+      type: Boolean,
+      default: false,
     },
   },
   {

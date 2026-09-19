@@ -53,6 +53,12 @@ export const createEmployee = async (req, res) => {
     // Generate Temporary Password
     const tempPassword = generatePassword();
 
+    // Determine Role
+    let employeeRole = "Employee";
+    if (role === "Branch Manager" || /^\s*branch\s*man?ager\s*$/i.test(designation || "")) {
+      employeeRole = "Branch Manager";
+    }
+
     // Create Employee
     const employee = await User.create({
       employeeId,
@@ -63,25 +69,36 @@ export const createEmployee = async (req, res) => {
       department,
       designation,
       branch: employeeBranch,
-      role: "Employee",
+      role: employeeRole,
       status: "Active",
       isPasswordChanged: false,
     });
 
-    // Send Welcome Email
-    await sendEmail({
-      to: employee.email,
-      subject: "Welcome to DesignDec - Your Employee Account",
-      employeeName: employee.name,
-      employeeId: employee.employeeId,
-      temporaryPassword: tempPassword,
-    });
+    // Send Welcome Email with credentials
+    try {
+      await sendEmail({
+        to: employee.email,
+        subject: "Welcome to DesignDec - Your Employee Account Credentials",
+        employeeName: employee.name,
+        employeeId: employee.employeeId,
+        temporaryPassword: tempPassword,
+      });
+    } catch (emailError) {
+      console.error("❌ Onboarding Email Sending Failed:", emailError.message);
+      // Rollback employee creation to prevent orphaned accounts with lost passwords
+      await User.findByIdAndDelete(employee._id);
+      return res.status(500).json({
+        success: false,
+        message:
+          "Failed to deliver welcome email with temporary password. Employee creation was rolled back. Please check SMTP configuration or employee email.",
+      });
+    }
 
     // Success Response
     res.status(201).json({
       success: true,
       message:
-        "Employee created successfully. Temporary password has been sent to the employee's email.",
+        "Employee created successfully. A secure temporary password has been sent to the employee's email.",
       employee: {
         _id: employee._id,
         employeeId: employee.employeeId,
@@ -132,7 +149,7 @@ export const getEmployees = async (req, res) => {
     const skip = (page - 1) * limit;
 
     const filter = {
-      role: "Employee",
+      role: { $in: ["Employee", "Branch Manager"] },
 
       $or: [
         { name: { $regex: search, $options: "i" } },
@@ -188,9 +205,8 @@ export const getEmployees = async (req, res) => {
 export const getEmployeeById = async (req, res) => {
   try {
     const employee = await User.findOne({
-    //   _id: req.params.id,
-     employeeId: req.params.employeeId,
-      role: "Employee",
+      employeeId: req.params.employeeId,
+      role: { $in: ["Employee", "Branch Manager"] },
     }).select("-password");
 
     if (!employee) {
@@ -216,11 +232,11 @@ export const getEmployeeById = async (req, res) => {
 
 export const updateEmployee = async (req, res) => {
   try {
-    const { name, email, phone, department, designation, status, branch } = req.body;
+    const { name, email, phone, department, designation, status, branch, role } = req.body;
 
     const employee = await User.findOne({
       employeeId: req.params.employeeId,
-      role: "Employee",
+      role: { $in: ["Employee", "Branch Manager"] },
     });
 
     if (!employee) {
@@ -231,18 +247,18 @@ export const updateEmployee = async (req, res) => {
     }
 
     if (email && !validateEmail(email)) {
-  return res.status(400).json({
-    success: false,
-    message: "Please enter a valid email address.",
-  });
-}
+      return res.status(400).json({
+        success: false,
+        message: "Please enter a valid email address.",
+      });
+    }
 
     // Check duplicate email
     if (email && email !== employee.email) {
-const existingEmployee = await User.findOne({
-  email,
-  employeeId: { $ne: req.params.employeeId },
-});
+      const existingEmployee = await User.findOne({
+        email,
+        employeeId: { $ne: req.params.employeeId },
+      });
       if (existingEmployee) {
         return res.status(400).json({
           success: false,
@@ -266,6 +282,12 @@ const existingEmployee = await User.findOne({
       } else {
         employee.branch = null;
       }
+    }
+
+    if (role && ["Employee", "Branch Manager"].includes(role)) {
+      employee.role = role;
+    } else if (/^\s*branch\s*man?ager\s*$/i.test(designation || employee.designation || "")) {
+      employee.role = "Branch Manager";
     }
 
     employee.name = name || employee.name;
@@ -295,7 +317,7 @@ export const deleteEmployee = async (req, res) => {
   try {
     const employee = await User.findOne({
       employeeId: req.params.employeeId,
-      role: "Employee",
+      role: { $in: ["Employee", "Branch Manager"] },
     });
 
     if (!employee) {
@@ -312,6 +334,7 @@ export const deleteEmployee = async (req, res) => {
       message: "Employee deleted successfully.",
     });
   } catch (error) {
+
     console.error("Delete Employee Error:", error);
 
     res.status(500).json({

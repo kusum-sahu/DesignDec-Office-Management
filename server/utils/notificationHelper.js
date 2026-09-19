@@ -1,56 +1,49 @@
-import User from "../models/User.js";
-import Notification from "../models/Notification.js";
+import notificationService from "../services/notifications/NotificationService.js";
 
 /**
  * Send notification to all Admins (Main Office)
+ * Seamlessly delegated to production NotificationService
  */
 export const notifyAdmins = async ({ title, message, type, orderId }) => {
   try {
-    const admins = await User.find({ role: "Admin", status: "Active" }).select("_id");
-    if (!admins.length) return;
-
-    const notifications = admins.map((admin) => ({
-      recipient: admin._id,
-      title,
-      message,
-      type,
-      order: orderId,
-      isRead: false
-    }));
-
-    await Notification.insertMany(notifications);
+    await notificationService.dispatch({
+      event: type || "STATUS_UPDATE",
+      branch: "Main Office",
+      customData: {
+        title,
+        message,
+        orderId,
+      },
+      idempotencyPrefix: `legacy_admin_${orderId || Date.now()}`,
+    });
   } catch (error) {
-    console.error("Error notifying admins:", error);
+    console.error("[NotificationHelper] Error notifying admins:", error);
   }
 };
 
 /**
  * Send notification to Admin + Specific Branch Staff/Managers
+ * Seamlessly delegated to production NotificationService
  */
-export const notifyBothOffices = async ({ title, message, type, orderId, branchName }) => {
+export const notifyBothOffices = async ({
+  title,
+  message,
+  type,
+  orderId,
+  branchName,
+}) => {
   try {
-    // Find Admins AND employees/managers belonging to that branch
-    const recipients = await User.find({
-      status: "Active",
-      $or: [
-        { role: "Admin" },
-        { branch: branchName }
-      ]
-    }).select("_id");
-
-    if (!recipients.length) return;
-
-    const notifications = recipients.map((user) => ({
-      recipient: user._id,
-      title,
-      message,
-      type,
-      order: orderId,
-      isRead: false
-    }));
-
-    await Notification.insertMany(notifications);
+    await notificationService.dispatch({
+      event: type || "STATUS_UPDATE",
+      branch: branchName || "Main Office",
+      customData: {
+        title,
+        message,
+        orderId,
+      },
+      idempotencyPrefix: `legacy_both_${orderId || Date.now()}`,
+    });
   } catch (error) {
-    console.error("Error notifying both offices:", error);
+    console.error("[NotificationHelper] Error notifying both offices:", error);
   }
 };
