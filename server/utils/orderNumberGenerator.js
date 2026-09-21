@@ -16,11 +16,11 @@ export const getBranchPrefix = (branch) => {
 /**
  * Ensures the counter in database is at least equal to the highest existing sequence in Order collection.
  */
-export const syncCounterWithExistingOrders = async (prefix) => {
+export const syncCounterWithExistingOrders = async (prefix, force = false) => {
   const counterId = `order_${prefix}`;
   const regex = new RegExp(`^${prefix}-(\\d+)`);
 
-  const existingOrders = await Order.find({ orderNumber: regex, isDeleted: { $ne: true } }, { orderNumber: 1 }).lean();
+  const existingOrders = await Order.find({ orderNumber: regex }, { orderNumber: 1 }).lean();
 
   let maxSeq = 0;
   for (const ord of existingOrders) {
@@ -31,13 +31,12 @@ export const syncCounterWithExistingOrders = async (prefix) => {
     }
   }
 
-  // Ensure Counter is initialized to at least maxSeq
+  // Ensure Counter is synchronized
   const counter = await Counter.findById(counterId);
   if (!counter) {
     await Counter.create({ _id: counterId, seq: maxSeq });
-  } else if (counter.seq < maxSeq) {
-    counter.seq = maxSeq;
-    await counter.save();
+  } else if (force || counter.seq < maxSeq) {
+    await Counter.findByIdAndUpdate(counterId, { seq: maxSeq });
   }
 
   return maxSeq;
@@ -59,17 +58,27 @@ export const generateOrderNumber = async (branch, session = null) => {
     attempts++;
 
     // Atomic increment
+    const updateOptions = { returnDocument: "after", upsert: true };
+    if (session) {
+      updateOptions.session = session;
+    }
+
     const counter = await Counter.findByIdAndUpdate(
       counterId,
       { $inc: { seq: 1 } },
-      { new: true, upsert: true, session }
+      updateOptions
     );
 
     const paddedSeq = String(counter.seq).padStart(3, "0");
     const candidateNumber = `${prefix}-${paddedSeq}`;
 
-    // Verify no collision exists with existing active orders
-    const exists = await Order.findOne({ orderNumber: candidateNumber, isDeleted: { $ne: true } }).session(session).lean();
+    // Verify no collision exists with ANY existing orders in MongoDB (including soft-deleted)
+    const findQuery = Order.findOne({ orderNumber: candidateNumber });
+    if (session) {
+      findQuery.session(session);
+    }
+    const exists = await findQuery.lean();
+
     if (!exists) {
       return candidateNumber;
     }

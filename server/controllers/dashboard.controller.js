@@ -39,11 +39,11 @@ export const getDashboardStatistics = async (req, res) => {
         activeBranch = requestedBranch;
       }
     } else {
-      // Non-admin MUST have a valid assigned branch. Never assume or default.
-      if (!userBranch || !ALLOWED_BRANCHES.includes(userBranch)) {
+      // Non-admin MUST have a valid assigned branch and CANNOT access Main Office.
+      if (!userBranch || !ALLOWED_BRANCHES.includes(userBranch) || userBranch === "Main Office") {
         return res.status(403).json({
           success: false,
-          message: "Access denied. No valid branch assigned to your account. Please contact an Administrator to assign your branch."
+          message: "Access denied. Branch office staff cannot access Main Office data. Please contact an Administrator to assign your branch."
         });
       }
       activeBranch = userBranch;
@@ -61,7 +61,7 @@ export const getDashboardStatistics = async (req, res) => {
     endOfTomorrow.setDate(endOfTomorrow.getDate() + 1);
 
     // Queries filters
-    const employeeQuery = { role: "Employee", status: "Active" };
+    const employeeQuery = { role: { $in: ["Employee", "Branch Admin", "Branch Manager"] }, status: "Active" };
     if (branchFilter.branch) {
       employeeQuery.branch = branchFilter.branch;
     }
@@ -168,9 +168,9 @@ export const getDashboardStatistics = async (req, res) => {
         .limit(10)
         .lean(),
 
-      // 12. Branch Revenue & Share Split Aggregation (all non-cancelled orders)
+      // 12. Branch Revenue & Share Split Aggregation (in scope non-cancelled orders)
       Order.aggregate([
-        { $match: { deliveryStatus: { $ne: "Cancelled" } } },
+        { $match: nonCancelledMatch },
         {
           $group: {
             _id: "$branch",
@@ -381,7 +381,7 @@ export const getTodayAttendance = async (req, res) => {
     }
 
     const { role, branch: userBranch } = user;
-    const employeeFilter = { role: "Employee", status: "Active" };
+    const employeeFilter = { role: { $in: ["Employee", "Branch Admin", "Branch Manager"] }, status: "Active" };
 
     if (role === "Admin") {
       const requestedBranch = req.query.branch?.trim();

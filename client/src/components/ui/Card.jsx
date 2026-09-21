@@ -7,7 +7,7 @@ export const Card = forwardRef(
       <div
         ref={ref}
         className={cn(
-          "rounded-xl border border-slate-200/80 bg-white text-slate-900 shadow-xs transition-shadow",
+          "rounded-xl border border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs transition-shadow",
           className
         )}
         {...props}
@@ -40,7 +40,7 @@ export const CardTitle = forwardRef(
       <Component
         ref={ref}
         className={cn(
-          "text-lg font-semibold tracking-tight text-slate-900",
+          "text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100",
           className
         )}
         {...props}
@@ -57,7 +57,7 @@ export const CardDescription = forwardRef(
     return (
       <p
         ref={ref}
-        className={cn("text-sm text-slate-500 leading-relaxed", className)}
+        className={cn("text-sm text-slate-500 dark:text-slate-400 leading-relaxed", className)}
         {...props}
       >
         {children}

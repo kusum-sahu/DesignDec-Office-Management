@@ -46,8 +46,13 @@ export function EmployeeDashboardView({
 
   const todayFormatted = format(new Date(), "EEEE, d MMMM yyyy");
 
+  // Strictly filter out any Main Office orders from employee dashboard
+  const branchOrders = (orders || []).filter(
+    (o) => o.branch !== "Main Office" && (!user?.branch || o.branch === user?.branch)
+  );
+
   // Determine active orders (Pending, In Progress, Ready)
-  const activeOrders = (orders || []).filter(
+  const activeOrders = branchOrders.filter(
     (o) => o.deliveryStatus !== "Delivered" && o.deliveryStatus !== "Cancelled"
   );
 

@@ -5,7 +5,7 @@ import MobileDrawer from "../components/layout/MobileDrawer";
 
 export function DashboardLayout() {
   return (
-    <div className="h-screen w-screen bg-[#FED7DE] bg-gradient-to-br from-[#FED9E0] via-[#FDE0E6] to-[#FCD3DC] flex overflow-hidden selection:bg-rose-200 selection:text-rose-900">
+    <div className="h-screen w-screen bg-[#FED7DE] bg-gradient-to-br from-[#FED9E0] via-[#FDE0E6] to-[#FCD3DC] dark:bg-[#07090e] dark:from-[#07090e] dark:via-[#0e111a] dark:to-[#140c16] flex overflow-hidden selection:bg-rose-200 selection:text-rose-900 dark:selection:bg-rose-900 dark:selection:text-rose-100">
       {/* Desktop Collapsible Sidebar (Fixed full height on left) */}
       <Sidebar />
 
@@ -18,21 +18,21 @@ export function DashboardLayout() {
 
         {/* Ambient background glows matching Login visual language with deeper soft pink radiance */}
         <div
-          className="fixed top-0 right-0 w-[650px] h-[650px] bg-gradient-to-bl from-rose-300/40 via-rose-200/30 to-transparent rounded-full blur-3xl pointer-events-none -translate-y-1/4 translate-x-1/4 z-0"
+          className="fixed top-0 right-0 w-[650px] h-[650px] bg-gradient-to-bl from-rose-300/40 via-rose-200/30 to-transparent dark:from-rose-950/20 dark:via-rose-900/10 rounded-full blur-3xl pointer-events-none -translate-y-1/4 translate-x-1/4 z-0"
           aria-hidden="true"
         />
         <div
-          className="fixed bottom-0 right-1/4 w-[520px] h-[520px] bg-rose-200/40 rounded-full blur-3xl pointer-events-none translate-y-1/3 z-0"
+          className="fixed bottom-0 right-1/4 w-[520px] h-[520px] bg-rose-200/40 dark:bg-purple-950/15 rounded-full blur-3xl pointer-events-none translate-y-1/3 z-0"
           aria-hidden="true"
         />
         <div
-          className="fixed top-1/4 left-64 w-[420px] h-[420px] bg-rose-300/25 rounded-full blur-3xl pointer-events-none -translate-x-1/2 z-0"
+          className="fixed top-1/4 left-64 w-[420px] h-[420px] bg-rose-300/25 dark:bg-rose-950/15 rounded-full blur-3xl pointer-events-none -translate-x-1/2 z-0"
           aria-hidden="true"
         />
 
         {/* Subtle decorative curved line patterns matching Login page */}
         <svg
-          className="fixed inset-0 w-full h-full pointer-events-none select-none opacity-30 z-0"
+          className="fixed inset-0 w-full h-full pointer-events-none select-none opacity-30 dark:opacity-10 z-0"
           viewBox="0 0 1200 900"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"

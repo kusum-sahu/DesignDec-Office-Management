@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   ShoppingBag,
@@ -15,6 +16,9 @@ import {
   FileText,
   Calendar as CalendarIcon,
   MoreVertical,
+  Check,
+  XCircle,
+  ShieldAlert,
 } from "lucide-react";
 import { format } from "date-fns";
 import {
@@ -28,10 +32,61 @@ import {
   YAxis,
   Tooltip,
 } from "recharts";
+import { toast } from "sonner";
+import attendanceApi from "../../api/attendance.api";
+import useAuthStore from "../../stores/authStore";
+import RejectReasonModal from "../../components/attendance/RejectReasonModal";
 import { formatCurrency, formatDate } from "../../utils/formatters";
 
-export function AdminDashboardView({ stats, activeBranch, onOpenNewOrder }) {
+export function AdminDashboardView({
+  stats,
+  activeBranch,
+  onOpenNewOrder,
+  pendingCorrections = [],
+  onCorrectionAction,
+}) {
   const navigate = useNavigate();
+  const { user } = useAuthStore();
+  const [selectedCorrectionForReject, setSelectedCorrectionForReject] = useState(null);
+  const [actionInProgressId, setActionInProgressId] = useState(null);
+
+  const handleApproveCorrection = async (correction) => {
+    try {
+      setActionInProgressId(correction._id);
+      await attendanceApi.approveCorrectionRequest(correction._id, {
+        comments: "Approved via Admin Dashboard",
+      });
+      toast.success("Correction Request Approved", {
+        description: `Approved checkout correction for ${correction.employee?.name || "employee"}.`,
+      });
+      if (onCorrectionAction) onCorrectionAction();
+    } catch (err) {
+      toast.error("Approval Failed", {
+        description: err.response?.data?.message || err.message || "Failed to approve correction request.",
+      });
+    } finally {
+      setActionInProgressId(null);
+    }
+  };
+
+  const handleConfirmReject = async (reason) => {
+    if (!selectedCorrectionForReject) return;
+    try {
+      setActionInProgressId(selectedCorrectionForReject._id);
+      await attendanceApi.rejectCorrectionRequest(selectedCorrectionForReject._id, { reason });
+      toast.success("Correction Request Rejected", {
+        description: `Rejected request for ${selectedCorrectionForReject.employee?.name || "employee"}.`,
+      });
+      setSelectedCorrectionForReject(null);
+      if (onCorrectionAction) onCorrectionAction();
+    } catch (err) {
+      toast.error("Rejection Failed", {
+        description: err.response?.data?.message || err.message || "Failed to reject correction request.",
+      });
+    } finally {
+      setActionInProgressId(null);
+    }
+  };
   const todayFormatted = format(new Date(), "EEEE, d MMMM yyyy");
 
   // Attendance Donut Data
@@ -53,16 +108,28 @@ export function AdminDashboardView({ stats, activeBranch, onOpenNewOrder }) {
     ? attendanceChartData
     : [{ name: "No Data", value: 1, color: "#F1F5F9" }];
 
-  // Branch Performance Data
-  const branchesData = (stats?.branches || []).map((b) => ({
-    name: b.branch === "Santoshpur Branch" ? "Santoshpur" : "Main Office",
-    revenue: b.orderValue || 0,
-    orders: b.orderCount || 0,
-    fill: b.branch === "Santoshpur Branch" ? "#FECDD3" : "#E11D48",
-  }));
+  const isAdminUser = user?.role === "Admin";
+  const isBAUser =
+    user?.role === "Branch Admin" ||
+    user?.role === "Branch Manager" ||
+    (user?.role !== "Admin" && /^\s*branch\s*(admin|man?ager)\s*$/i.test(user?.designation || ""));
 
-  const recentOrders = stats?.recentOrders || [];
-  const urgentOrders = stats?.deadlines?.urgentOrders || [];
+  // Branch Performance Data - strictly exclude Main Office for Branch Admin
+  const branchesData = (stats?.branches || [])
+    .filter((b) => isAdminUser || b.branch !== "Main Office")
+    .map((b) => ({
+      name: b.branch === "Santoshpur Branch" ? "Santoshpur" : "Main Office",
+      revenue: b.orderValue || 0,
+      orders: b.orderCount || 0,
+      fill: b.branch === "Santoshpur Branch" ? "#FECDD3" : "#E11D48",
+    }));
+
+  const recentOrders = (stats?.recentOrders || []).filter(
+    (o) => isAdminUser || (o.branch !== "Main Office" && (!user?.branch || o.branch === user?.branch))
+  );
+  const urgentOrders = (stats?.deadlines?.urgentOrders || []).filter(
+    (o) => isAdminUser || (o.branch !== "Main Office" && (!user?.branch || o.branch === user?.branch))
+  );
 
   return (
     <div className="space-y-6">
@@ -75,10 +142,10 @@ export function AdminDashboardView({ stats, activeBranch, onOpenNewOrder }) {
           <div>
             <p className="text-xs font-medium text-slate-500">Good morning,</p>
             <h1 className="text-2xl font-bold tracking-tight text-slate-900 font-heading flex items-center gap-2 mt-0.5">
-              DesignDec Admin <span className="text-xl">👋</span>
+              {isAdminUser ? "DesignDec Admin" : `DesignDec Branch Admin`} <span className="text-xl">👋</span>
             </h1>
             <p className="text-xs text-slate-500 mt-1">
-              Here's what's happening across your {activeBranch || "office"} today.
+              Here's what's happening across {activeBranch || (isAdminUser ? "your office" : "your branch")} today.
             </p>
           </div>
 
@@ -108,7 +175,7 @@ export function AdminDashboardView({ stats, activeBranch, onOpenNewOrder }) {
               {stats?.orders?.totalOrders ?? 0}
             </div>
             <div className="text-[11px] font-medium text-slate-500">
-              <span>All office branches</span>
+              <span>{isAdminUser && !activeBranch ? "All office branches" : (activeBranch || "Your Branch")}</span>
             </div>
           </div>
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-600 shrink-0">
@@ -124,7 +191,7 @@ export function AdminDashboardView({ stats, activeBranch, onOpenNewOrder }) {
               {formatCurrency(stats?.financials?.totalOrderValue ?? 0)}
             </div>
             <div className="text-[11px] font-medium text-slate-500">
-              <span>Total booked revenue</span>
+              <span>{isAdminUser && !activeBranch ? "Total booked revenue" : "Branch booked revenue"}</span>
             </div>
           </div>
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-600 shrink-0">
@@ -453,7 +520,7 @@ export function AdminDashboardView({ stats, activeBranch, onOpenNewOrder }) {
               </ResponsiveContainer>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-rose-50 text-center text-xs">
+            <div className={`grid ${branchesData.length === 1 ? "grid-cols-1" : "grid-cols-2"} gap-2 pt-2 border-t border-rose-50 text-center text-xs`}>
               {branchesData.map((b) => (
                 <div key={b.name} className="py-1">
                   <span className="font-bold text-slate-900 block">{formatCurrency(b.revenue)}</span>
@@ -505,6 +572,168 @@ export function AdminDashboardView({ stats, activeBranch, onOpenNewOrder }) {
               </div>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Attendance Correction Requests Card */}
+      <div className="bg-white rounded-2xl border border-rose-100/70 shadow-2xs overflow-hidden">
+        <div className="flex items-center justify-between p-5 border-b border-rose-50 bg-rose-50/20">
+          <div className="flex items-center gap-2.5">
+            <div className="h-8 w-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
+              <ShieldAlert className="h-4.5 w-4.5 text-amber-600" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-bold text-slate-900">Attendance Correction Requests</h2>
+                {pendingCorrections.length > 0 && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white animate-pulse">
+                    {pendingCorrections.length} Pending
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Review and approve missing checkout correction requests submitted by employees.
+              </p>
+            </div>
+          </div>
+          <Link
+            to="/attendance"
+            className="text-xs font-semibold text-rose-600 hover:text-rose-700 inline-flex items-center gap-1"
+          >
+            Manage in Attendance <ArrowRight className="h-3 w-3" />
+          </Link>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs text-slate-600">
+            <thead className="bg-rose-50/40 text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-rose-50">
+              <tr>
+                <th className="py-3 px-5">#</th>
+                <th className="py-3 px-5">Employee</th>
+                <th className="py-3 px-5">Date</th>
+                <th className="py-3 px-5">Check In</th>
+                <th className="py-3 px-5">Existing Check-Out</th>
+                <th className="py-3 px-5">Requested Out</th>
+                <th className="py-3 px-5">Reason</th>
+                <th className="py-3 px-5">Status</th>
+                <th className="py-3 px-5 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-rose-50">
+              {pendingCorrections.length > 0 ? (
+                pendingCorrections.map((c, i) => {
+                  const emp = c.employee || {};
+                  const initials = emp.name ? emp.name.slice(0, 2).toUpperCase() : "EM";
+                  const attDate = c.attendanceDate ? new Date(c.attendanceDate) : null;
+                  const inTime = c.attendance?.checkIn?.time ? new Date(c.attendance.checkIn.time) : null;
+                  const existingOutTime = c.attendance?.checkOut?.time ? new Date(c.attendance.checkOut.time) : null;
+                  const outTime = c.requestedCheckOutTime ? new Date(c.requestedCheckOutTime) : null;
+                  const isProcessing = actionInProgressId === c._id;
+
+                  const isSelf = String(emp._id || "") === String(user?._id || "");
+                  const isEmpBranchAdmin =
+                    emp.role === "Branch Admin" ||
+                    emp.role === "Branch Manager" ||
+                    (/^\s*branch\s*(admin|man?ager)\s*$/i.test(emp.designation || ""));
+                  const canApproveOrReject = isAdminUser || (isBAUser && !isSelf && !isEmpBranchAdmin);
+
+                  return (
+                    <tr key={c._id} className="hover:bg-rose-50/30 transition-colors">
+                      <td className="py-3.5 px-5 font-bold text-slate-400">{i + 1}</td>
+                      <td className="py-3.5 px-5">
+                        <div className="flex items-center gap-2.5">
+                          <div className="h-7 w-7 rounded-full bg-purple-100 text-purple-700 font-bold text-[10px] flex items-center justify-center shrink-0">
+                            {initials}
+                          </div>
+                          <div>
+                            <span className="font-bold text-slate-900 block leading-tight">
+                              {emp.name || "Employee"}
+                            </span>
+                            <span className="text-[10px] text-slate-400 leading-none">
+                              {emp.employeeId || "DD-EMP"} • {emp.branch || "Main Office"}
+                              {isEmpBranchAdmin ? " (Branch Admin)" : ""}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-5 font-semibold text-slate-800 whitespace-nowrap">
+                        {attDate ? format(attDate, "dd MMM yyyy") : "--"}
+                      </td>
+                      <td className="py-3.5 px-5 text-slate-700 whitespace-nowrap">
+                        {inTime ? format(inTime, "hh:mm a") : "--"}
+                      </td>
+                      <td className="py-3.5 px-5 whitespace-nowrap">
+                        {existingOutTime ? (
+                          <span className="text-slate-700 font-medium">{format(existingOutTime, "hh:mm a")}</span>
+                        ) : (
+                          <span className="inline-block text-[10.5px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200/80">
+                            Missing Checkout
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-5 font-semibold text-rose-700 whitespace-nowrap">
+                        {outTime ? format(outTime, "hh:mm a") : "--"}
+                      </td>
+                      <td className="py-3.5 px-5 text-slate-600 max-w-xs truncate" title={c.reason}>
+                        "{c.reason}"
+                      </td>
+                      <td className="py-3.5 px-5">
+                        <span className="inline-block text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 animate-pulse">
+                          {c.status || "Pending"}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-5 text-right whitespace-nowrap">
+                        <div className="inline-flex items-center gap-1.5 justify-end">
+                          {isSelf ? (
+                            <span className="inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200">
+                              Self Request
+                            </span>
+                          ) : isBAUser && isEmpBranchAdmin ? (
+                            <span className="inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                              Awaiting Admin Approval
+                            </span>
+                          ) : canApproveOrReject ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleApproveCorrection(c)}
+                                disabled={isProcessing}
+                                title="Approve Request"
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-[11px] font-bold transition-all shadow-2xs cursor-pointer disabled:opacity-50"
+                              >
+                                <Check className="h-3.5 w-3.5" />
+                                <span>Approve</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedCorrectionForReject(c)}
+                                disabled={isProcessing}
+                                title="Reject Request"
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 text-[11px] font-bold transition-all cursor-pointer disabled:opacity-50"
+                              >
+                                <XCircle className="h-3.5 w-3.5" />
+                                <span>Reject</span>
+                              </button>
+                            </>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              ) : (
+                <tr>
+                  <td colSpan={9} className="py-8 text-center text-slate-400">
+                    <div className="flex flex-col items-center justify-center gap-1">
+                      <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                      <span className="font-semibold text-slate-700 text-xs">No pending correction requests</span>
+                      <span className="text-[11px] text-slate-400">All checkout correction requests have been reviewed and processed.</span>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -606,6 +835,15 @@ export function AdminDashboardView({ stats, activeBranch, onOpenNewOrder }) {
           </table>
         </div>
       </div>
+
+      {/* Reject Reason Modal */}
+      <RejectReasonModal
+        isOpen={!!selectedCorrectionForReject}
+        onClose={() => setSelectedCorrectionForReject(null)}
+        onConfirm={handleConfirmReject}
+        title="Reject Attendance Correction Request"
+        description={`Please provide an explanation for rejecting ${selectedCorrectionForReject?.employee?.name || "the employee"}'s checkout correction request.`}
+      />
     </div>
   );
 }

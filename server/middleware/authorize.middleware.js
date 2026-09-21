@@ -1,12 +1,19 @@
 const authorize = (...roles) => {
   return (req, res, next) => {
 
-    const isBranchManager =
-      req.user?.role === "Branch Manager" ||
-      (roles.includes("Branch Manager") &&
-        /^\s*branch\s*man?ager\s*$/i.test(req.user?.designation || ""));
+    const userRole = req.user?.role;
+    const isBranchRoleAllowed = roles.includes("Branch Admin") || roles.includes("Branch Manager");
+    const isUserBranchAdminOrManager =
+      userRole === "Branch Admin" ||
+      userRole === "Branch Manager" ||
+      (isBranchRoleAllowed && /^\s*branch\s*(admin|man?ager)\s*$/i.test(req.user?.designation || ""));
 
-    if (!roles.includes(req.user?.role) && !isBranchManager) {
+    // Check if user role matches or user is Branch Admin/Manager when branch role is allowed
+    const isAuthorized =
+      roles.includes(userRole) ||
+      (isBranchRoleAllowed && isUserBranchAdminOrManager);
+
+    if (!isAuthorized) {
       return res.status(403).json({
         success: false,
         message: "You are not authorized to access this resource.",

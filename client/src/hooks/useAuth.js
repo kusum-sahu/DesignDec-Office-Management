@@ -19,11 +19,11 @@ export function useAuth() {
   } = useAuthStore();
 
   const isAdmin = user?.role === ROLES.ADMIN;
-  const isBranchManager =
-    user?.role === ROLES.BRANCH_MANAGER ||
-    (user?.role !== ROLES.ADMIN && /^\s*branch\s*man?ager\s*$/i.test(user?.designation || ""));
-  const isEmployee = !isAdmin && !isBranchManager;
-
+  const isBranchAdmin =
+    user?.role === ROLES.BRANCH_ADMIN ||
+    user?.role === "Branch Manager" ||
+    (user?.role !== ROLES.ADMIN && /^\s*branch\s*(admin|man?ager)\s*$/i.test(user?.designation || ""));
+  const isEmployee = !isAdmin && !isBranchAdmin;
 
   return {
     user,
@@ -33,7 +33,8 @@ export function useAuth() {
     forcePasswordChange,
     error,
     isAdmin,
-    isBranchManager,
+    isBranchAdmin,
+    isBranchManager: isBranchAdmin, // backward compatibility
     isEmployee,
     login,
     logout,

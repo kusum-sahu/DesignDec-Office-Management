@@ -33,9 +33,14 @@ export class ErrorBoundary extends Component {
             <h2 className="text-xl font-bold text-slate-900 mb-2">
               Application Render Error
             </h2>
-            <p className="text-sm text-slate-500 mb-6 leading-relaxed">
+            <p className="text-sm text-slate-500 mb-4 leading-relaxed">
               An unexpected error occurred in the user interface. You can reload the page or return to the dashboard.
             </p>
+            {import.meta.env.DEV && this.state.error && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-xs font-mono rounded text-left overflow-auto max-h-48 whitespace-pre-wrap">
+                <strong>Error: </strong>{this.state.error.message || String(this.state.error)}
+              </div>
+            )}
 
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <Button

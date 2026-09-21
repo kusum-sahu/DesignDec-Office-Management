@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import useUIStore from "../../stores/uiStore";
+import useAuthStore from "../../stores/authStore";
 import employeeApi from "../../api/employee.api";
 import { formatDate } from "../../utils/formatters";
 import { BRANCHES } from "../../constants/branches";
@@ -32,7 +33,16 @@ const DEPARTMENTS = ["Design", "Operations", "Installation", "Sales", "Accounts"
 
 export function EmployeesPage() {
   const queryClient = useQueryClient();
+  const { user } = useAuthStore();
   const { activeBranch } = useUIStore();
+
+  const isAdmin = user?.role === "Admin";
+  const isBranchAdmin =
+    user?.role === "Branch Admin" ||
+    user?.role === "Branch Manager" ||
+    (user?.role !== "Admin" && /^\s*branch\s*(admin|man?ager)\s*$/i.test(user?.designation || ""));
+
+  const userBranch = user?.branch || "Santoshpur Branch";
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedBranch, setSelectedBranch] = useState("");
@@ -51,18 +61,18 @@ export function EmployeesPage() {
     phone: "",
     department: DEPARTMENTS[0],
     designation: "Designer",
-    branch: "Main Office",
+    branch: isAdmin ? (activeBranch || "Main Office") : userBranch,
     role: "Employee",
     status: "Active",
   });
   const [formErrors, setFormErrors] = useState({});
 
-  // Query Employees
+  // Query Employees (Branch Admin strictly scoped to their branch)
   const queryParams = {
     page,
     limit,
     search: searchQuery || undefined,
-    branch: selectedBranch || activeBranch || undefined,
+    branch: isAdmin ? (selectedBranch || activeBranch || undefined) : userBranch,
   };
 
   const { data: employeesResponse, isLoading } = useQuery({
@@ -124,7 +134,7 @@ export function EmployeesPage() {
       phone: "",
       department: DEPARTMENTS[0],
       designation: "Designer",
-      branch: activeBranch || "Main Office",
+      branch: isAdmin ? (activeBranch || "Main Office") : userBranch,
       role: "Employee",
       status: "Active",
     });
@@ -140,7 +150,7 @@ export function EmployeesPage() {
       phone: emp.phone || "",
       department: emp.department || DEPARTMENTS[0],
       designation: emp.designation || "Staff",
-      branch: emp.branch || "Main Office",
+      branch: isAdmin ? (emp.branch || "Main Office") : userBranch,
       role: emp.role || "Employee",
       status: emp.status || "Active",
     });
@@ -161,7 +171,11 @@ export function EmployeesPage() {
     setFormErrors(errs);
     if (Object.keys(errs).length > 0) return;
 
-    saveMutation.mutate(formData);
+    const payload = isAdmin
+      ? formData
+      : { ...formData, branch: userBranch, role: "Employee" };
+
+    saveMutation.mutate(payload);
   };
 
   return (
@@ -203,22 +217,29 @@ export function EmployeesPage() {
           />
         </div>
 
-        <select
-          value={selectedBranch}
-          onChange={(e) => {
-            setSelectedBranch(e.target.value);
-            setPage(1);
-          }}
-          aria-label="Filter by Branch"
-          className="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50/50 focus:outline-none focus:border-rose-400"
-        >
-          <option value="">All Branches</option>
-          {BRANCHES.map((b) => (
-            <option key={b} value={b}>
-              {b}
-            </option>
-          ))}
-        </select>
+        {isAdmin ? (
+          <select
+            value={selectedBranch}
+            onChange={(e) => {
+              setSelectedBranch(e.target.value);
+              setPage(1);
+            }}
+            aria-label="Filter by Branch"
+            className="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50/50 focus:outline-none focus:border-rose-400"
+          >
+            <option value="">All Branches</option>
+            {BRANCHES.map((b) => (
+              <option key={b} value={b}>
+                {b}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <div className="px-3 py-2 text-xs rounded-xl border border-rose-100 bg-rose-50/40 text-slate-700 font-semibold flex items-center gap-1.5">
+            <Building2 className="h-3.5 w-3.5 text-rose-500 shrink-0" />
+            <span className="truncate">{userBranch}</span>
+          </div>
+        )}
 
         <select
           value={selectedDepartment}
@@ -454,12 +475,25 @@ export function EmployeesPage() {
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
               />
 
-              <Select
-                label="Branch"
-                value={formData.branch}
-                onChange={(e) => setFormData({ ...formData, branch: e.target.value })}
-                options={BRANCHES.map((b) => ({ value: b, label: b }))}
-              />
+              {isAdmin ? (
+                <Select
+                  label="Branch"
+                  value={formData.branch}
+                  onChange={(e) => setFormData({ ...formData, branch: e.target.value })}
+                  options={BRANCHES.map((b) => ({ value: b, label: b }))}
+                />
+              ) : (
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700 block">Branch</label>
+                  <div className="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-slate-100/70 text-slate-700 font-semibold flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <Building2 className="h-3.5 w-3.5 text-rose-500" />
+                      {userBranch}
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-normal">Assigned Branch</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

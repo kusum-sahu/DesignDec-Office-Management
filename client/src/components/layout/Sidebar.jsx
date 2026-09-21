@@ -36,12 +36,12 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "hidden lg:flex flex-col border-r border-rose-200/80 bg-gradient-to-b from-white via-[#FFF8F9] to-[#FEEFF1] shadow-[2px_0_15px_rgba(244,63,94,0.03)] transition-all duration-300 select-none z-40 shrink-0 h-screen sticky top-0",
+        "hidden lg:flex flex-col border-r border-rose-200/80 dark:border-slate-800/80 bg-gradient-to-b from-white via-[#FFF8F9] to-[#FEEFF1] dark:from-slate-900 dark:via-slate-900/95 dark:to-slate-950 shadow-[2px_0_15px_rgba(244,63,94,0.03)] transition-all duration-300 select-none z-40 shrink-0 h-screen sticky top-0",
         isSidebarCollapsed ? "w-20" : "w-64"
       )}
     >
       {/* Brand Header */}
-      <div className="flex h-16 items-center justify-between border-b border-rose-100/80 px-4 bg-white/60 backdrop-blur-xs shrink-0">
+      <div className="flex h-16 items-center justify-between border-b border-rose-100/80 dark:border-slate-800/80 px-4 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xs shrink-0">
         <BrandLogo collapsed={isSidebarCollapsed} />
       </div>
 
@@ -62,8 +62,8 @@ export function Sidebar() {
                 cn(
                   "relative group flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-all duration-150 cursor-pointer",
                   isActive
-                    ? "bg-rose-100/80 text-rose-700 font-semibold shadow-2xs border border-rose-200/60"
-                    : "text-slate-600 hover:bg-rose-100/40 hover:text-slate-900",
+                    ? "bg-rose-100/80 dark:bg-rose-950/50 text-rose-700 dark:text-rose-400 font-semibold shadow-2xs border border-rose-200/60 dark:border-rose-900/50"
+                    : "text-slate-600 dark:text-slate-400 hover:bg-rose-100/40 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200",
                   isSidebarCollapsed && "justify-center px-2"
                 )
               }
@@ -79,8 +79,8 @@ export function Sidebar() {
                     className={cn(
                       "h-5 w-5 shrink-0 transition-colors",
                       isActive
-                        ? "text-rose-600"
-                        : "text-slate-400 group-hover:text-slate-600"
+                        ? "text-rose-600 dark:text-rose-400"
+                        : "text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300"
                     )}
                   />
 
@@ -104,7 +104,7 @@ export function Sidebar() {
       {/* Promotional Plant Card (DesignDec Signature UI) */}
       {!isSidebarCollapsed && (
         <div className="px-3 pb-3 shrink-0">
-          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-white via-rose-50 to-rose-100/60 p-3.5 border border-rose-200/80 shadow-xs">
+          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-white via-rose-50 to-rose-100/60 dark:from-slate-800/90 dark:via-slate-800 dark:to-slate-850 p-3.5 border border-rose-200/80 dark:border-slate-700/80 shadow-xs">
             {/* Subtle restrained dot grid accent in card */}
             <div className="absolute top-2 right-2 flex gap-1 opacity-50 pointer-events-none" aria-hidden="true">
               <span className="h-1 w-1 rounded-full bg-rose-400" />
@@ -113,10 +113,10 @@ export function Sidebar() {
             </div>
 
             <div className="relative z-10 max-w-[110px]">
-              <p className="text-[13px] font-extrabold leading-snug text-slate-800">
+              <p className="text-[13px] font-extrabold leading-snug text-slate-800 dark:text-slate-100">
                 Better<br />
                 People.<br />
-                <span className="text-rose-600">Brighter</span><br />
+                <span className="text-rose-600 dark:text-rose-400">Brighter</span><br />
                 Spaces.
               </p>
             </div>
@@ -133,17 +133,17 @@ export function Sidebar() {
       )}
 
       {/* Footer Row: Copyright & Collapse Button */}
-      <div className="border-t border-rose-100/80 p-3 flex items-center justify-between gap-2 bg-white/40 shrink-0">
+      <div className="border-t border-rose-100/80 dark:border-slate-800/80 p-3 flex items-center justify-between gap-2 bg-white/40 dark:bg-slate-900/40 shrink-0">
         {!isSidebarCollapsed ? (
           <>
-            <div className="text-[11px] text-slate-400 leading-tight">
+            <div className="text-[11px] text-slate-400 dark:text-slate-500 leading-tight">
               © 2026 DesignDec.<br />All rights reserved.
             </div>
             <button
               type="button"
               onClick={toggleSidebar}
               aria-label="Collapse sidebar"
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-100/70 transition-colors cursor-pointer"
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-100/70 dark:hover:bg-slate-800 transition-colors cursor-pointer"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
@@ -153,7 +153,7 @@ export function Sidebar() {
             type="button"
             onClick={toggleSidebar}
             aria-label="Expand sidebar"
-            className="mx-auto flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-100/70 transition-colors cursor-pointer"
+            className="mx-auto flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-100/70 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <ChevronRight className="h-4 w-4" />
           </button>

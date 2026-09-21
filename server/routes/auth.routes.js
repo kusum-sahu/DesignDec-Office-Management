@@ -5,6 +5,7 @@ import {
     logout,
     getMe,
     changePassword,
+    updateProfile,
     forgotPassword,
     verifyOTP,
     resetPassword,
@@ -25,6 +26,7 @@ router.post("/logout", logout);
 
 //! Logged In Employee Details (GET : /api/v1/auth/me)
 router.get("/me", protect, getMe);
+router.put("/profile", protect, updateProfile);
 router.put(
     "/change-password",
     protect,

@@ -634,6 +634,7 @@ export function AdminAttendancePage() {
                         <th className="py-3 px-4">Employee</th>
                         <th className="py-3 px-4">Date</th>
                         <th className="py-3 px-4">Check In</th>
+                        <th className="py-3 px-4">Existing Check-Out</th>
                         <th className="py-3 px-4">Requested Out</th>
                         <th className="py-3 px-4">Reason</th>
                         <th className="py-3 px-4">Status</th>
@@ -648,9 +649,22 @@ export function AdminAttendancePage() {
                           const initials = emp.name ? emp.name.slice(0, 2).toUpperCase() : "EM";
                           const attDate = c.attendanceDate ? new Date(c.attendanceDate) : null;
                           const inTime = c.attendance?.checkIn?.time ? new Date(c.attendance.checkIn.time) : null;
+                          const existingOutTime = c.attendance?.checkOut?.time ? new Date(c.attendance.checkOut.time) : null;
                           const outTime = c.requestedCheckOutTime ? new Date(c.requestedCheckOutTime) : null;
                           const isPending = c.status === "Pending";
                           const isProcessing = actionInProgressId === c._id;
+
+                          const isSelf = String(emp._id || "") === String(user?._id || "");
+                          const isEmpBranchAdmin =
+                            emp.role === "Branch Admin" ||
+                            emp.role === "Branch Manager" ||
+                            (/^\s*branch\s*(admin|man?ager)\s*$/i.test(emp.designation || ""));
+                          const isAdminUser = user?.role === "Admin";
+                          const isBAUser =
+                            user?.role === "Branch Admin" ||
+                            user?.role === "Branch Manager" ||
+                            (user?.role !== "Admin" && /^\s*branch\s*(admin|man?ager)\s*$/i.test(user?.designation || ""));
+                          const canApproveOrReject = isAdminUser || (isBAUser && !isSelf && !isEmpBranchAdmin);
 
                           return (
                             <tr key={c._id} className="hover:bg-rose-50/30 transition-colors">
@@ -666,6 +680,7 @@ export function AdminAttendancePage() {
                                     </span>
                                     <span className="text-[10px] text-slate-400 leading-none">
                                       {emp.employeeId || "DD-EMP"} • {emp.branch || "Main Office"}
+                                      {isEmpBranchAdmin ? " (Branch Admin)" : ""}
                                     </span>
                                   </div>
                                 </div>
@@ -675,6 +690,15 @@ export function AdminAttendancePage() {
                               </td>
                               <td className="py-3.5 px-4 text-slate-700 whitespace-nowrap">
                                 {inTime ? format(inTime, "hh:mm a") : "--"}
+                              </td>
+                              <td className="py-3.5 px-4 whitespace-nowrap">
+                                {existingOutTime ? (
+                                  <span className="text-slate-700 font-medium">{format(existingOutTime, "hh:mm a")}</span>
+                                ) : (
+                                  <span className="inline-block text-[10.5px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200/80">
+                                    Missing Checkout
+                                  </span>
+                                )}
                               </td>
                               <td className="py-3.5 px-4 font-semibold text-rose-700 whitespace-nowrap">
                                 {outTime ? format(outTime, "hh:mm a") : "--"}
@@ -713,26 +737,34 @@ export function AdminAttendancePage() {
                                 <div className="inline-flex items-center gap-1.5 justify-end">
                                   {isPending && (
                                     <>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleApproveCorrection(c)}
-                                        disabled={isProcessing}
-                                        title="Approve Request"
-                                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-[11px] font-bold transition-all shadow-2xs cursor-pointer disabled:opacity-50"
-                                      >
-                                        <Check className="h-3.5 w-3.5" />
-                                        <span>Approve</span>
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setSelectedCorrectionForReject(c)}
-                                        disabled={isProcessing}
-                                        title="Reject Request"
-                                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 text-[11px] font-bold transition-all cursor-pointer disabled:opacity-50"
-                                      >
-                                        <XCircle className="h-3.5 w-3.5" />
-                                        <span>Reject</span>
-                                      </button>
+                                      {canApproveOrReject ? (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => setSelectedCorrectionForApprove(c)}
+                                            disabled={isProcessing}
+                                            title="Approve Request"
+                                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-[11px] font-bold transition-all shadow-2xs cursor-pointer disabled:opacity-50"
+                                          >
+                                            <Check className="h-3.5 w-3.5" />
+                                            <span>Approve</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setSelectedCorrectionForReject(c)}
+                                            disabled={isProcessing}
+                                            title="Reject Request"
+                                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 text-[11px] font-bold transition-all cursor-pointer disabled:opacity-50"
+                                          >
+                                            <XCircle className="h-3.5 w-3.5" />
+                                            <span>Reject</span>
+                                          </button>
+                                        </>
+                                      ) : isBAUser && (isSelf || isEmpBranchAdmin) ? (
+                                        <span className="text-[10.5px] font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                                          Awaiting Admin Approval
+                                        </span>
+                                      ) : null}
                                     </>
                                   )}
                                   <button
@@ -750,7 +782,7 @@ export function AdminAttendancePage() {
                         })
                       ) : (
                         <tr>
-                          <td colSpan={9} className="py-12 text-center text-slate-400">
+                          <td colSpan={10} className="py-12 text-center text-slate-400">
                             No attendance correction requests found.
                           </td>
                         </tr>

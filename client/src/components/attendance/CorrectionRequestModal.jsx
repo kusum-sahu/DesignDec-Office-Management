@@ -117,7 +117,7 @@ export function CorrectionRequestModal({
       toast.success("Correction Request Submitted!", {
         description:
           res?.message ||
-          "Your request has been forwarded to Admin and Branch Manager for review.",
+          "Your request has been forwarded to Admin and Branch Admin for review.",
       });
 
       setReason("");
@@ -174,7 +174,7 @@ export function CorrectionRequestModal({
               <div className="space-y-1">
                 <span className="font-bold block">Company Policy Compliance</span>
                 <span className="text-amber-800 text-[11px] leading-relaxed block">
-                  Employees cannot directly edit previous check-in or check-out times. All correction requests are audited and require approval from an Admin or Branch Manager.
+                  Employees cannot directly edit previous check-in or check-out times. All correction requests are audited and require approval from an Admin or Branch Admin.
                 </span>
               </div>
             </div>
@@ -186,7 +186,7 @@ export function CorrectionRequestModal({
                 <div>
                   <span className="font-bold block text-blue-950">Correction Request Already Submitted</span>
                   <span className="text-[11px] text-blue-800">
-                    A correction request for this date is currently pending approval by your Admin or Branch Manager.
+                    A correction request for this date is currently pending approval by your Admin or Branch Admin.
                   </span>
                 </div>
               </div>

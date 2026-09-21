@@ -404,3 +404,78 @@ export const getMe = async (req, res) => {
     user: req.user,
   });
 };
+
+//! Update Current User Profile
+export const updateProfile = async (req, res) => {
+  try {
+    const {
+      name,
+      phone,
+      dateOfBirth,
+      gender,
+      address,
+      emergencyContact,
+      documents,
+      profileImage,
+      branch,
+      department,
+    } = req.body;
+
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found.",
+      });
+    }
+
+    if (name && typeof name === "string") user.name = name.trim();
+    if (phone !== undefined) user.phone = String(phone).trim();
+    if (dateOfBirth !== undefined) user.dateOfBirth = dateOfBirth ? new Date(dateOfBirth) : null;
+    if (gender !== undefined) user.gender = String(gender).trim();
+    if (address !== undefined) user.address = String(address).trim();
+
+    if (emergencyContact && typeof emergencyContact === "object") {
+      user.emergencyContact = {
+        name: emergencyContact.name !== undefined ? String(emergencyContact.name).trim() : (user.emergencyContact?.name || ""),
+        phone: emergencyContact.phone !== undefined ? String(emergencyContact.phone).trim() : (user.emergencyContact?.phone || ""),
+        relationship: emergencyContact.relationship !== undefined ? String(emergencyContact.relationship).trim() : (user.emergencyContact?.relationship || ""),
+        address: emergencyContact.address !== undefined ? String(emergencyContact.address).trim() : (user.emergencyContact?.address || ""),
+      };
+    }
+
+    if (documents && typeof documents === "object") {
+      user.documents = {
+        aadhaar: documents.aadhaar !== undefined ? String(documents.aadhaar).trim() : (user.documents?.aadhaar || ""),
+        pan: documents.pan !== undefined ? String(documents.pan).trim() : (user.documents?.pan || ""),
+        addressProof: documents.addressProof !== undefined ? String(documents.addressProof).trim() : (user.documents?.addressProof || ""),
+      };
+    }
+
+    if (profileImage !== undefined) {
+      user.profileImage = profileImage;
+    }
+
+    // Allow Admins to update branch / department
+    if (user.role === "Admin") {
+      if (branch) user.branch = branch;
+      if (department) user.department = department;
+    }
+
+    await user.save();
+
+    const updatedUser = await User.findById(user._id).select("-password");
+
+    return res.status(200).json({
+      success: true,
+      message: "Profile updated successfully.",
+      user: updatedUser,
+    });
+  } catch (error) {
+    console.error("Update Profile Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to update profile.",
+    });
+  }
+};

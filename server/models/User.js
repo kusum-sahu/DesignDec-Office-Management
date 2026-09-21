@@ -52,9 +52,37 @@ const userSchema = new mongoose.Schema(
       default: "",
     },
 
+    dateOfBirth: {
+      type: Date,
+      default: null,
+    },
+
+    gender: {
+      type: String,
+      default: "",
+    },
+
+    address: {
+      type: String,
+      default: "",
+    },
+
+    emergencyContact: {
+      name: { type: String, default: "" },
+      phone: { type: String, default: "" },
+      relationship: { type: String, default: "" },
+      address: { type: String, default: "" },
+    },
+
+    documents: {
+      aadhaar: { type: String, default: "" },
+      pan: { type: String, default: "" },
+      addressProof: { type: String, default: "" },
+    },
+
     role: {
       type: String,
-      enum: ["Admin", "Employee", "Branch Manager"],
+      enum: ["Admin", "Employee", "Branch Admin", "Branch Manager"],
       default: "Employee",
     },
 

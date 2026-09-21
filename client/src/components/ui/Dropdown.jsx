@@ -34,7 +34,7 @@ export function Dropdown({
         <div
           role="menu"
           className={cn(
-            "absolute z-50 mt-2 min-w-48 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg ring-1 ring-slate-900/5 transition-all animate-in fade-in-0 zoom-in-95",
+            "absolute z-50 mt-2 min-w-48 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-1.5 shadow-lg ring-1 ring-slate-900/5 dark:ring-slate-800 text-slate-900 dark:text-slate-100 transition-all animate-in fade-in-0 zoom-in-95",
             align === "right" ? "right-0 origin-top-right" : "left-0 origin-top-left",
             className
           )}
@@ -64,20 +64,20 @@ export function DropdownItem({
       className={cn(
         "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-left font-medium transition-colors cursor-pointer",
         destructive
-          ? "text-red-600 hover:bg-red-50 hover:text-red-700"
-          : "text-slate-700 hover:bg-slate-50 hover:text-slate-900",
+          ? "text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-700"
+          : "text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100",
         disabled && "pointer-events-none opacity-50 cursor-not-allowed",
         className
       )}
     >
-      {Icon && <Icon className="h-4 w-4 shrink-0 text-slate-400" />}
+      {Icon && <Icon className="h-4 w-4 shrink-0 text-slate-400 dark:text-slate-500" />}
       <span>{children}</span>
     </button>
   );
 }
 
 export function DropdownDivider() {
-  return <div className="my-1 border-t border-slate-100" />;
+  return <div className="my-1 border-t border-slate-100 dark:border-slate-800" />;
 }
 
 export function DropdownLabel({ children, className }) {

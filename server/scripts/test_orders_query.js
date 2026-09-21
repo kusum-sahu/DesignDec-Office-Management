@@ -5,7 +5,7 @@ import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 import Order from "../models/Order.js";
 
-const BASE_URL = `http://localhost:${process.env.PORT || 5000}`;
+const BASE_URL = `http://127.0.0.1:${process.env.PORT || 5000}`;
 
 async function testQuery() {
   await mongoose.connect(process.env.MONGO_URI);

@@ -43,9 +43,10 @@ export function OrdersPage() {
   const { activeBranch } = useUIStore();
 
   const isAdmin = user?.role === "Admin";
-  const isBranchManager =
+  const isBranchAdmin =
+    user?.role === "Branch Admin" ||
     user?.role === "Branch Manager" ||
-    (user?.role !== "Admin" && /^\s*branch\s*man?ager\s*$/i.test(user?.designation || ""));
+    (user?.role !== "Admin" && /^\s*branch\s*(admin|man?ager)\s*$/i.test(user?.designation || ""));
 
   // Filter & Pagination States
   const [selectedStatusTab, setSelectedStatusTab] = useState("All");
@@ -63,13 +64,14 @@ export function OrdersPage() {
 
   // RBAC Permission Rules:
   // - Admin: Full access across Main Office and Santoshpur Branch (Edit, Payment, Status, Delete).
-  // - Branch Manager: Full access only for their assigned branch.
+  // - Branch Admin: Full access only for their assigned branch.
   // - Normal Employees: View and Create only for assigned branch; cannot Edit, Add Payment, Update Status, or Delete.
   // - Financial details: Visible to ALL roles.
   const canManageOrder = (order) => {
     if (!order) return false;
     if (isAdmin) return true;
-    if (isBranchManager && order.branch === user?.branch) return true;
+    if (order.branch === "Main Office") return false;
+    if (isBranchAdmin && order.branch === user?.branch) return true;
     return false;
   };
 
@@ -80,8 +82,11 @@ export function OrdersPage() {
     search: searchQuery || undefined,
     deliveryStatus: selectedStatusTab !== "All" ? selectedStatusTab : undefined,
   };
-  if (isAdmin && activeBranch) {
-    queryParams.branch = activeBranch;
+  if (isAdmin) {
+    if (activeBranch) queryParams.branch = activeBranch;
+  } else {
+    // Non-admin branch staff strictly filtered to user's assigned branch
+    queryParams.branch = user?.branch || undefined;
   }
 
   const { data: ordersResponse, isLoading } = useQuery({
@@ -89,8 +94,12 @@ export function OrdersPage() {
     queryFn: () => orderApi.getOrders(queryParams),
   });
 
-  const orders = ordersResponse?.orders || [];
-  const totalRecords = ordersResponse?.totalRecords || 0;
+  const rawOrders = ordersResponse?.orders || [];
+  // Strict Defense-in-Depth: Never display Main Office orders to branch office staff
+  const orders = !isAdmin
+    ? rawOrders.filter((o) => o.branch !== "Main Office" && (!user?.branch || o.branch === user?.branch))
+    : rawOrders;
+  const totalRecords = !isAdmin ? orders.length : (ordersResponse?.totalRecords || 0);
   const totalPages = ordersResponse?.totalPages || 1;
 
   // Status Counts for Tabs
@@ -564,7 +573,7 @@ export function OrdersPage() {
           queryClient.invalidateQueries({ queryKey: ["orders"] });
           queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
         }}
-        defaultBranch={user?.branch || "Main Office"}
+        defaultBranch={!isAdmin ? (user?.branch || "Santoshpur Branch") : (activeBranch || "Main Office")}
         isAdmin={isAdmin}
       />
 

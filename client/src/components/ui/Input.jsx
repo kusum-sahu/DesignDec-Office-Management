@@ -29,7 +29,7 @@ export const Input = forwardRef(
         {label && (
           <label
             htmlFor={inputId}
-            className="block text-sm font-medium text-slate-700"
+            className="block text-sm font-medium text-slate-700 dark:text-slate-300"
           >
             {label}
             {required && <span className="ml-1 text-rose-500">*</span>}
@@ -54,12 +54,12 @@ export const Input = forwardRef(
               error ? errorId : helperText ? helperId : undefined
             }
             className={cn(
-              "block w-full rounded-lg border bg-white px-3.5 py-2.5 text-sm text-slate-900 transition-colors placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-offset-0 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500",
+              "block w-full rounded-lg border bg-white dark:bg-slate-800/90 px-3.5 py-2.5 text-sm text-slate-900 dark:text-slate-100 transition-colors placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-offset-0 disabled:cursor-not-allowed disabled:bg-slate-50 dark:disabled:bg-slate-900 disabled:text-slate-500 dark:disabled:text-slate-600",
               leftIcon && "pl-10",
               rightIcon && "pr-10",
               error
-                ? "border-red-400 focus:border-red-500 focus:ring-red-200"
-                : "border-slate-300 hover:border-slate-400 focus:border-rose-500 focus:ring-rose-200",
+                ? "border-red-400 focus:border-red-500 focus:ring-red-200 dark:focus:ring-red-950"
+                : "border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 focus:border-rose-500 focus:ring-rose-200 dark:focus:ring-rose-950/50",
               className
             )}
             {...props}

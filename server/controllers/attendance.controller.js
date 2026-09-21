@@ -665,21 +665,26 @@ Number(summary.totalOvertimeHours.toFixed(2));
   }
 };
 
-//! Admin Attendance Reports API
+//! Admin Attendance Reports API (Admin & Branch Admin)
 export const getAdminAttendanceReport = async (req, res) => {
     try {
-        // Check Admin
-        const admin = await User.findById(req.user._id);
-        if (!admin) {
+        const caller = await User.findById(req.user._id);
+        if (!caller) {
             return res.status(404).json({
                 success: false,
-                message: "Admin not found."
+                message: "User not found."
             });
         }
-        if (admin.role !== "Admin") {
+        const isCallerAdmin = caller.role === "Admin";
+        const isCallerBranchAdmin =
+            caller.role === "Branch Admin" ||
+            caller.role === "Branch Manager" ||
+            (caller.role !== "Admin" && /^\s*branch\s*(admin|man?ager)\s*$/i.test(caller.designation || ""));
+
+        if (!isCallerAdmin && !isCallerBranchAdmin) {
             return res.status(403).json({
                 success: false,
-                message: "Access denied."
+                message: "Access denied. Only Admins and Branch Admins can view attendance reports."
             });
         }
         // Query Parameters
@@ -697,24 +702,52 @@ export const getAdminAttendanceReport = async (req, res) => {
         const search = req.query.search?.trim();
         const sort = req.query.sort || "latest";
         const skip = (page - 1) * limit;
-        // Base Filter employeeId (DD-2026-001 )baad me
+
+        // Branch scoping
+        let inScopeEmployeeIds = null;
+        if (!isCallerAdmin && isCallerBranchAdmin) {
+            const branchName = caller.branch || "Santoshpur Branch";
+            const branchEmployees = await User.find({ branch: branchName }).select("_id");
+            inScopeEmployeeIds = branchEmployees.map((e) => e._id.toString());
+
+            if (employee && !inScopeEmployeeIds.includes(employee.toString())) {
+                return res.status(403).json({
+                    success: false,
+                    message: `Access denied. You can only view attendance records for employees in ${branchName}.`
+                });
+            }
+        }
+
+        // Base Filter
         const filter = {};
         if (employee) {
-    filter.employee = employee;
-}
-// Search Employee
-if (search) {
-    const employees = await User.find({
-        $or: [
-            { name: { $regex: search, $options: "i" } },
-            { email: { $regex: search, $options: "i" } },
-            { employeeId: { $regex: search, $options: "i" } }
-        ]
-    }).select("_id");
-    filter.employee = {
-        $in: employees.map((emp) => emp._id)
-    };
-}
+            filter.employee = employee;
+        } else if (inScopeEmployeeIds !== null) {
+            filter.employee = { $in: inScopeEmployeeIds };
+        }
+
+        // Search Employee
+        if (search) {
+            const searchFilter = {
+                $or: [
+                    { name: { $regex: search, $options: "i" } },
+                    { email: { $regex: search, $options: "i" } },
+                    { employeeId: { $regex: search, $options: "i" } }
+                ]
+            };
+            if (!isCallerAdmin && isCallerBranchAdmin) {
+                searchFilter.branch = caller.branch || "Santoshpur Branch";
+            }
+            const employees = await User.find(searchFilter).select("_id");
+            const matchingSearchIds = employees.map((emp) => emp._id.toString());
+            if (inScopeEmployeeIds !== null) {
+                filter.employee = {
+                    $in: matchingSearchIds.filter((id) => inScopeEmployeeIds.includes(id))
+                };
+            } else {
+                filter.employee = { $in: matchingSearchIds };
+            }
+        }
 // Month & Year Filter
 if (month && year) {
     const fromDate = new Date(
@@ -1174,18 +1207,19 @@ export const getMyCorrectionRequests = async (req, res) => {
   }
 };
 
-//! GET ALL CORRECTION REQUESTS (Admin & Branch Manager Flow)
+//! GET ALL CORRECTION REQUESTS (Admin & Branch Admin Flow)
 export const getAllCorrectionRequests = async (req, res) => {
   try {
     const userRole = req.user.role;
-    const isBranchManager =
+    const isBranchAdmin =
+      userRole === "Branch Admin" ||
       userRole === "Branch Manager" ||
-      (userRole !== "Admin" && /^\s*branch\s*man?ager\s*$/i.test(req.user.designation || ""));
+      (userRole !== "Admin" && /^\s*branch\s*(admin|man?ager)\s*$/i.test(req.user.designation || ""));
 
-    if (userRole !== "Admin" && !isBranchManager) {
+    if (userRole !== "Admin" && !isBranchAdmin) {
       return res.status(403).json({
         success: false,
-        message: "Access denied. Only Admins and Branch Managers can access correction requests.",
+        message: "Access denied. Only Admins and Branch Admins can access correction requests.",
       });
     }
 
@@ -1197,8 +1231,8 @@ export const getAllCorrectionRequests = async (req, res) => {
     // Filter employees based on role & branch
     let employeeFilter = {};
 
-    if (isBranchManager) {
-      // Scoped strictly to the branch manager's branch
+    if (isBranchAdmin) {
+      // Scoped strictly to the branch admin's branch
       const branchName = req.user.branch || "Santoshpur Branch";
       employeeFilter.branch = branchName;
     } else if (branch && branch !== "All") {
@@ -1231,7 +1265,7 @@ export const getAllCorrectionRequests = async (req, res) => {
     const [totalRecords, requests] = await Promise.all([
       AttendanceCorrection.countDocuments(filter),
       AttendanceCorrection.find(filter)
-        .populate("employee", "name email employeeId department designation branch")
+        .populate("employee", "name email employeeId department designation branch role")
         .populate("correctedBy", "name email role designation")
         .populate("attendance")
         .populate("auditTrail.performedBy", "name email role")
@@ -1263,18 +1297,19 @@ export const getAllCorrectionRequests = async (req, res) => {
   }
 };
 
-//! APPROVE CORRECTION REQUEST (Admin & Branch Manager)
+//! APPROVE CORRECTION REQUEST (Admin & Branch Admin)
 export const approveCorrectionRequest = async (req, res) => {
   try {
     const userRole = req.user.role;
-    const isBranchManager =
+    const isBranchAdmin =
+      userRole === "Branch Admin" ||
       userRole === "Branch Manager" ||
-      (userRole !== "Admin" && /^\s*branch\s*man?ager\s*$/i.test(req.user.designation || ""));
+      (userRole !== "Admin" && /^\s*branch\s*(admin|man?ager)\s*$/i.test(req.user.designation || ""));
 
-    if (userRole !== "Admin" && !isBranchManager) {
+    if (userRole !== "Admin" && !isBranchAdmin) {
       return res.status(403).json({
         success: false,
-        message: "Access denied. Only Admins and Branch Managers can approve correction requests.",
+        message: "Access denied. Only Admins and Branch Admins can approve correction requests.",
       });
     }
 
@@ -1296,8 +1331,31 @@ export const approveCorrectionRequest = async (req, res) => {
       });
     }
 
-    // Branch Manager scoping check
-    if (isBranchManager) {
+    // 1. Self-approval guard: Requesters cannot approve their own correction requests
+    if (correction.employee?._id?.toString() === req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "Self-approval is forbidden. You cannot approve your own attendance correction request.",
+      });
+    }
+
+    // 2. Branch Admin special business rule:
+    // If a Branch Admin submits a correction request, it must be approved exclusively by Admin.
+    // A Branch Admin cannot approve their own or another Branch Admin's request.
+    const isRequesterBranchAdmin =
+      correction.employee?.role === "Branch Admin" ||
+      correction.employee?.role === "Branch Manager" ||
+      (/^\s*branch\s*(admin|man?ager)\s*$/i.test(correction.employee?.designation || ""));
+
+    if (isBranchAdmin && isRequesterBranchAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: "Branch Admin correction requests require Administrator approval. Branch Admins cannot approve Branch Admin requests.",
+      });
+    }
+
+    // 3. Branch Admin scoping check
+    if (isBranchAdmin) {
       const managerBranch = req.user.branch || "Santoshpur Branch";
       const empBranch = correction.employee?.branch;
       if (empBranch !== managerBranch) {
@@ -1385,18 +1443,19 @@ export const approveCorrectionRequest = async (req, res) => {
   }
 };
 
-//! REJECT CORRECTION REQUEST (Admin & Branch Manager)
+//! REJECT CORRECTION REQUEST (Admin & Branch Admin)
 export const rejectCorrectionRequest = async (req, res) => {
   try {
     const userRole = req.user.role;
-    const isBranchManager =
+    const isBranchAdmin =
+      userRole === "Branch Admin" ||
       userRole === "Branch Manager" ||
-      (userRole !== "Admin" && /^\s*branch\s*man?ager\s*$/i.test(req.user.designation || ""));
+      (userRole !== "Admin" && /^\s*branch\s*(admin|man?ager)\s*$/i.test(req.user.designation || ""));
 
-    if (userRole !== "Admin" && !isBranchManager) {
+    if (userRole !== "Admin" && !isBranchAdmin) {
       return res.status(403).json({
         success: false,
-        message: "Access denied. Only Admins and Branch Managers can reject correction requests.",
+        message: "Access denied. Only Admins and Branch Admins can reject correction requests.",
       });
     }
 
@@ -1425,8 +1484,30 @@ export const rejectCorrectionRequest = async (req, res) => {
       });
     }
 
-    // Branch Manager scoping check
-    if (isBranchManager) {
+    // 1. Self-action guard: Requesters cannot reject their own correction requests
+    if (correction.employee?._id?.toString() === req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "Self-action is forbidden. You cannot reject your own attendance correction request.",
+      });
+    }
+
+    // 2. Branch Admin special business rule:
+    // If a Branch Admin submits a correction request, it must be acted upon exclusively by Admin.
+    const isRequesterBranchAdmin =
+      correction.employee?.role === "Branch Admin" ||
+      correction.employee?.role === "Branch Manager" ||
+      (/^\s*branch\s*(admin|man?ager)\s*$/i.test(correction.employee?.designation || ""));
+
+    if (isBranchAdmin && isRequesterBranchAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: "Branch Admin correction requests require Administrator review. Branch Admins cannot reject Branch Admin requests.",
+      });
+    }
+
+    // 3. Branch Admin scoping check
+    if (isBranchAdmin) {
       const managerBranch = req.user.branch || "Santoshpur Branch";
       const empBranch = correction.employee?.branch;
       if (empBranch !== managerBranch) {

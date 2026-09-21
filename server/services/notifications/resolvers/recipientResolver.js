@@ -70,13 +70,14 @@ export async function resolveBranchRecipients({ branch, event }) {
 
   // 2. Active Branch Managers for the specific branch (if specified)
   if (branch && branch !== "Main Office") {
-    // Match explicit role "Branch Manager" OR designation regex matching "Branch Manager"
+    // Match explicit role "Branch Admin" / "Branch Manager" OR designation regex matching "Branch Admin" / "Branch Manager"
     const branchManagers = await User.find({
       status: "Active",
       branch: branch,
       $or: [
+        { role: "Branch Admin" },
         { role: "Branch Manager" },
-        { designation: /^\s*branch\s*man?ager\s*$/i },
+        { designation: /^\s*branch\s*(admin|man?ager)\s*$/i },
       ],
     })
       .select("_id name email phone role branch designation")

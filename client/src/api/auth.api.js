@@ -17,6 +17,11 @@ export const authApi = {
   getMe: () => apiClient.get("/auth/me"),
 
   /**
+   * Update current user profile
+   */
+  updateProfile: (data) => apiClient.put("/auth/profile", data),
+
+  /**
    * Change employee password
    */
   changePassword: (data) => apiClient.put("/auth/change-password", data),

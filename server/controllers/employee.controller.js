@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import User from "../models/User.js";
 import generateEmployeeId from "../utils/generateEmployeeId.js";
 import generatePassword from "../utils/generatePassword.js";
@@ -6,7 +7,14 @@ import sendEmail from "../utils/sendEmail.js";
 
 export const createEmployee = async (req, res) => {
   try {
-    const { name, email, phone, department, designation, branch } = req.body;
+    const caller = req.user;
+    const isCallerAdmin = caller?.role === "Admin";
+    const isCallerBranchAdmin =
+      caller?.role === "Branch Admin" ||
+      caller?.role === "Branch Manager" ||
+      (caller?.role !== "Admin" && /^\s*branch\s*(admin|man?ager)\s*$/i.test(caller?.designation || ""));
+
+    const { name, email, phone, department, designation, branch, role } = req.body;
 
     // Required Fields Validation
     if (!name || !email) {
@@ -24,17 +32,42 @@ export const createEmployee = async (req, res) => {
       });
     }
 
-    // Branch Validation (if provided)
+    // Branch Validation & Scoping
     const allowedBranches = ["Main Office", "Santoshpur Branch"];
     let employeeBranch = null;
-    if (branch !== undefined && branch !== null && branch !== "") {
-      if (!allowedBranches.includes(branch)) {
-        return res.status(400).json({
+
+    if (!isCallerAdmin && isCallerBranchAdmin) {
+      // Branch Admin MUST have a branch assigned and can only create for their branch
+      if (!caller.branch || !allowedBranches.includes(caller.branch)) {
+        return res.status(403).json({
           success: false,
-          message: `Invalid branch '${branch}'. Allowed branches: ${allowedBranches.join(", ")}`,
+          message: "Access denied. No valid branch assigned to your Branch Admin account.",
         });
       }
-      employeeBranch = branch;
+      if (branch && branch !== caller.branch) {
+        return res.status(403).json({
+          success: false,
+          message: "Branch Admins can only create employees for their assigned branch.",
+        });
+      }
+      if (role && role !== "Employee") {
+        return res.status(403).json({
+          success: false,
+          message: "Branch Admins can only create employees with 'Employee' role.",
+        });
+      }
+      employeeBranch = caller.branch;
+    } else {
+      // Admin can assign any allowed branch
+      if (branch !== undefined && branch !== null && branch !== "") {
+        if (!allowedBranches.includes(branch)) {
+          return res.status(400).json({
+            success: false,
+            message: `Invalid branch '${branch}'. Allowed branches: ${allowedBranches.join(", ")}`,
+          });
+        }
+        employeeBranch = branch;
+      }
     }
 
     // Check Duplicate Email
@@ -55,9 +88,16 @@ export const createEmployee = async (req, res) => {
 
     // Determine Role
     let employeeRole = "Employee";
-    if (role === "Branch Manager" || /^\s*branch\s*man?ager\s*$/i.test(designation || "")) {
-      employeeRole = "Branch Manager";
+    if (isCallerAdmin) {
+      if (
+        role === "Branch Admin" ||
+        role === "Branch Manager" ||
+        /^\s*branch\s*(admin|man?ager)\s*$/i.test(designation || "")
+      ) {
+        employeeRole = "Branch Admin";
+      }
     }
+    // Note: If caller is Branch Admin, employeeRole is strictly "Employee"
 
     // Create Employee
     const employee = await User.create({
@@ -125,6 +165,13 @@ export const createEmployee = async (req, res) => {
 
 export const getEmployees = async (req, res) => {
   try {
+    const caller = req.user;
+    const isCallerAdmin = caller?.role === "Admin";
+    const isCallerBranchAdmin =
+      caller?.role === "Branch Admin" ||
+      caller?.role === "Branch Manager" ||
+      (caller?.role !== "Admin" && /^\s*branch\s*(admin|man?ager)\s*$/i.test(caller?.designation || ""));
+
     const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 10;
     const search = req.query.search || "";
@@ -149,7 +196,7 @@ export const getEmployees = async (req, res) => {
     const skip = (page - 1) * limit;
 
     const filter = {
-      role: { $in: ["Employee", "Branch Manager"] },
+      role: { $in: ["Employee", "Branch Admin", "Branch Manager"] },
 
       $or: [
         { name: { $regex: search, $options: "i" } },
@@ -160,11 +207,19 @@ export const getEmployees = async (req, res) => {
       ],
     };
 
-    if (req.query.branch) {
-      filter.branch = req.query.branch;
+    if (isCallerAdmin) {
+      if (req.query.branch) {
+        filter.branch = req.query.branch;
+      }
+    } else if (isCallerBranchAdmin) {
+      if (!caller.branch) {
+        return res.status(403).json({
+          success: false,
+          message: "Access denied. No branch assigned to your Branch Admin account.",
+        });
+      }
+      filter.branch = caller.branch;
     }
-
-  //get employees
 
     const employees = await User.find(filter)
       .select("-password")
@@ -204,15 +259,34 @@ export const getEmployees = async (req, res) => {
 
 export const getEmployeeById = async (req, res) => {
   try {
-    const employee = await User.findOne({
-      employeeId: req.params.employeeId,
-      role: { $in: ["Employee", "Branch Manager"] },
-    }).select("-password");
+    const caller = req.user;
+    const isCallerAdmin = caller?.role === "Admin";
+    const isCallerBranchAdmin =
+      caller?.role === "Branch Admin" ||
+      caller?.role === "Branch Manager" ||
+      (caller?.role !== "Admin" && /^\s*branch\s*(admin|man?ager)\s*$/i.test(caller?.designation || ""));
+
+    const isObjectId = mongoose.Types.ObjectId.isValid(req.params.employeeId);
+    const query = {
+      ...(isObjectId
+        ? { $or: [{ _id: req.params.employeeId }, { employeeId: req.params.employeeId }] }
+        : { employeeId: req.params.employeeId }),
+      role: { $in: ["Employee", "Branch Admin", "Branch Manager"] },
+    };
+
+    const employee = await User.findOne(query).select("-password");
 
     if (!employee) {
       return res.status(404).json({
         success: false,
         message: "Employee not found.",
+      });
+    }
+
+    if (!isCallerAdmin && isCallerBranchAdmin && employee.branch !== caller.branch) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. You can only view employees belonging to your branch.",
       });
     }
 
@@ -232,18 +306,52 @@ export const getEmployeeById = async (req, res) => {
 
 export const updateEmployee = async (req, res) => {
   try {
+    const caller = req.user;
+    const isCallerAdmin = caller?.role === "Admin";
+    const isCallerBranchAdmin =
+      caller?.role === "Branch Admin" ||
+      caller?.role === "Branch Manager" ||
+      (caller?.role !== "Admin" && /^\s*branch\s*(admin|man?ager)\s*$/i.test(caller?.designation || ""));
+
     const { name, email, phone, department, designation, status, branch, role } = req.body;
 
-    const employee = await User.findOne({
-      employeeId: req.params.employeeId,
-      role: { $in: ["Employee", "Branch Manager"] },
-    });
+    const isObjectId = mongoose.Types.ObjectId.isValid(req.params.employeeId);
+    const query = {
+      ...(isObjectId
+        ? { $or: [{ _id: req.params.employeeId }, { employeeId: req.params.employeeId }] }
+        : { employeeId: req.params.employeeId }),
+      role: { $in: ["Employee", "Branch Admin", "Branch Manager"] },
+    };
+
+    const employee = await User.findOne(query);
 
     if (!employee) {
       return res.status(404).json({
         success: false,
         message: "Employee not found.",
       });
+    }
+
+    // Branch scoping checks
+    if (!isCallerAdmin && isCallerBranchAdmin) {
+      if (employee.branch !== caller.branch) {
+        return res.status(403).json({
+          success: false,
+          message: "Access denied. You can only update employees belonging to your branch.",
+        });
+      }
+      if (branch && branch !== caller.branch) {
+        return res.status(403).json({
+          success: false,
+          message: "Branch Admins cannot reassign employees to a different branch.",
+        });
+      }
+      if (role && role !== "Employee") {
+        return res.status(403).json({
+          success: false,
+          message: "Branch Admins cannot change employee roles.",
+        });
+      }
     }
 
     if (email && !validateEmail(email)) {
@@ -257,7 +365,7 @@ export const updateEmployee = async (req, res) => {
     if (email && email !== employee.email) {
       const existingEmployee = await User.findOne({
         email,
-        employeeId: { $ne: req.params.employeeId },
+        _id: { $ne: employee._id },
       });
       if (existingEmployee) {
         return res.status(400).json({
@@ -269,7 +377,7 @@ export const updateEmployee = async (req, res) => {
       employee.email = email;
     }
 
-    if (branch !== undefined) {
+    if (isCallerAdmin && branch !== undefined) {
       if (branch !== null && branch !== "") {
         const allowedBranches = ["Main Office", "Santoshpur Branch"];
         if (!allowedBranches.includes(branch)) {
@@ -284,10 +392,12 @@ export const updateEmployee = async (req, res) => {
       }
     }
 
-    if (role && ["Employee", "Branch Manager"].includes(role)) {
-      employee.role = role;
-    } else if (/^\s*branch\s*man?ager\s*$/i.test(designation || employee.designation || "")) {
-      employee.role = "Branch Manager";
+    if (isCallerAdmin) {
+      if (role && ["Employee", "Branch Admin", "Branch Manager"].includes(role)) {
+        employee.role = role === "Branch Manager" ? "Branch Admin" : role;
+      } else if (/^\s*branch\s*(admin|man?ager)\s*$/i.test(designation || employee.designation || "")) {
+        employee.role = "Branch Admin";
+      }
     }
 
     employee.name = name || employee.name;
@@ -315,16 +425,43 @@ export const updateEmployee = async (req, res) => {
 
 export const deleteEmployee = async (req, res) => {
   try {
-    const employee = await User.findOne({
-      employeeId: req.params.employeeId,
-      role: { $in: ["Employee", "Branch Manager"] },
-    });
+    const caller = req.user;
+    const isCallerAdmin = caller?.role === "Admin";
+    const isCallerBranchAdmin =
+      caller?.role === "Branch Admin" ||
+      caller?.role === "Branch Manager" ||
+      (caller?.role !== "Admin" && /^\s*branch\s*(admin|man?ager)\s*$/i.test(caller?.designation || ""));
+
+    const isObjectId = mongoose.Types.ObjectId.isValid(req.params.employeeId);
+    const query = {
+      ...(isObjectId
+        ? { $or: [{ _id: req.params.employeeId }, { employeeId: req.params.employeeId }] }
+        : { employeeId: req.params.employeeId }),
+      role: { $in: ["Employee", "Branch Admin", "Branch Manager"] },
+    };
+
+    const employee = await User.findOne(query);
 
     if (!employee) {
       return res.status(404).json({
         success: false,
         message: "Employee not found.",
       });
+    }
+
+    if (!isCallerAdmin && isCallerBranchAdmin) {
+      if (employee.branch !== caller.branch) {
+        return res.status(403).json({
+          success: false,
+          message: "Access denied. You can only delete employees belonging to your branch.",
+        });
+      }
+      if (employee.role === "Branch Admin" || employee.role === "Branch Manager") {
+        return res.status(403).json({
+          success: false,
+          message: "Branch Admins cannot delete another Branch Admin account.",
+        });
+      }
     }
 
     await employee.deleteOne();

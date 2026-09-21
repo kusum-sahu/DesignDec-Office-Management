@@ -16,10 +16,12 @@ export const isUserAdmin = (user) => {
  */
 export const isUserBranchManager = (user) => {
   if (!user) return false;
-  if (user.role === "Branch Manager") return true;
-  if (user.role !== "Admin" && /^\s*branch\s*man?ager\s*$/i.test(user.designation || "")) return true;
+  if (user.role === "Branch Admin" || user.role === "Branch Manager") return true;
+  if (user.role !== "Admin" && /^\s*branch\s*(admin|man?ager)\s*$/i.test(user.designation || "")) return true;
   return false;
 };
+
+export const isUserBranchAdmin = isUserBranchManager;
 
 /**
  * Check if user is a Normal Employee
@@ -63,24 +65,24 @@ export const createOrder = async (req, res) => {
     if (isUserAdmin(req.user)) {
       branch = req.body.branch ? req.body.branch.trim() : "Main Office";
     } else if (isUserBranchManager(req.user)) {
-      if (!req.user.branch) {
+      if (!req.user.branch || req.user.branch === "Main Office") {
         return res.status(403).json({
           success: false,
-          message: "Access denied. No branch assigned to your Branch Manager account."
+          message: "Access denied. Branch Admins cannot create orders for Main Office."
         });
       }
       if (req.body.branch && req.body.branch !== req.user.branch) {
         return res.status(403).json({
           success: false,
-          message: "Branch Managers can only create orders for their assigned branch."
+          message: "Branch Admins can only create orders for their assigned branch."
         });
       }
       branch = req.user.branch;
     } else if (isUserNormalEmployee(req.user)) {
-      if (!req.user.branch) {
+      if (!req.user.branch || req.user.branch === "Main Office") {
         return res.status(403).json({
           success: false,
-          message: "Access denied. No branch assigned to your Employee account."
+          message: "Access denied. Branch employees cannot create orders for Main Office."
         });
       }
       if (req.body.branch && req.body.branch !== req.user.branch) {
@@ -431,14 +433,18 @@ export const getAllOrders = async (req, res) => {
 
     // Role-based branch scoping:
     // Admin: can view all branches or filter by ?branch=
-    // Branch Manager: strictly locked to assigned branch
-    // Normal Employee: strictly locked to assigned branch
+    // Branch Office users (Branch Admin / Employee): strictly locked to their assigned branch, never Main Office
     if (isUserAdmin(req.user)) {
       if (branch) query.branch = branch;
-    } else if (isUserBranchManager(req.user) || isUserNormalEmployee(req.user)) {
-      query.branch = req.user.branch || "Main Office";
     } else {
-      return res.status(403).json({ success: false, message: "Access denied." });
+      const userBranch = req.user?.branch;
+      if (!userBranch || userBranch === "Main Office") {
+        return res.status(403).json({
+          success: false,
+          message: "Access denied. Branch office staff cannot view Main Office orders."
+        });
+      }
+      query.branch = userBranch;
     }
 
     if (deliveryStatus) query.deliveryStatus = deliveryStatus;
@@ -515,10 +521,10 @@ export const updateOrderStatus = async (req, res) => {
     if (isUserAdmin(req.user)) {
       // Allowed across all branches
     } else if (isUserBranchManager(req.user)) {
-      if (order.branch !== req.user.branch) {
+      if (!req.user.branch || order.branch !== req.user.branch || order.branch === "Main Office") {
         return res.status(403).json({
           success: false,
-          message: "Branch Managers can only update order status for their assigned branch."
+          message: "Branch Admins can only update order status for their assigned branch."
         });
       }
     } else {
@@ -580,10 +586,10 @@ export const updateOrder = async (req, res) => {
       });
     }
 
-    if (isBranchManager && order.branch !== req.user.branch) {
+    if (isBranchManager && (!req.user.branch || order.branch !== req.user.branch || order.branch === "Main Office")) {
       return res.status(403).json({
         success: false,
-        message: "Branch Managers can only edit orders for their assigned branch."
+        message: "Branch Admins can only edit orders for their assigned branch."
       });
     }
 
@@ -743,10 +749,10 @@ export const deleteOrder = async (req, res) => {
       });
     }
 
-    if (isBranchManager && order.branch !== req.user.branch) {
+    if (isBranchManager && (!req.user.branch || order.branch !== req.user.branch || order.branch === "Main Office")) {
       return res.status(403).json({
         success: false,
-        message: "Branch Managers can only delete orders belonging to their assigned branch."
+        message: "Branch Admins can only delete orders belonging to their assigned branch."
       });
     }
 
@@ -801,10 +807,10 @@ export const addPayment = async (req, res) => {
       });
     }
 
-    if (isBranchManager && order.branch !== req.user.branch) {
+    if (isBranchManager && (!req.user.branch || order.branch !== req.user.branch || order.branch === "Main Office")) {
       return res.status(403).json({
         success: false,
-        message: "Branch Managers can only record payments for their assigned branch orders."
+        message: "Branch Admins can only record payments for their assigned branch orders."
       });
     }
 

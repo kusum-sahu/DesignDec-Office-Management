@@ -53,11 +53,11 @@ export function AppRoutes() {
           <Route path="/orders" element={<OrdersPage />} />
           <Route path="/attendance" element={<AttendancePage />} />
 
-          {/* Admin Only Routes */}
+          {/* Admin & Branch Admin Routes */}
           <Route
             path="/attendance/admin"
             element={
-              <RoleGuard allowedRoles={[ROLES.ADMIN]}>
+              <RoleGuard allowedRoles={[ROLES.ADMIN, ROLES.BRANCH_ADMIN]}>
                 <AdminAttendancePage />
               </RoleGuard>
             }
@@ -65,7 +65,7 @@ export function AppRoutes() {
           <Route
             path="/employees"
             element={
-              <RoleGuard allowedRoles={[ROLES.ADMIN]}>
+              <RoleGuard allowedRoles={[ROLES.ADMIN, ROLES.BRANCH_ADMIN]}>
                 <EmployeesPage />
               </RoleGuard>
             }

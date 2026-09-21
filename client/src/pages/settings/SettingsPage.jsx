@@ -11,12 +11,11 @@ import {
   MapPin,
   Navigation,
   Edit2,
-  CheckCircle2,
-  AlertCircle,
   Loader2,
   X,
 } from "lucide-react";
 import useAuthStore from "../../stores/authStore";
+import useUIStore from "../../stores/uiStore";
 import attendanceApi from "../../api/attendance.api";
 import Button from "../../components/ui/Button";
 import Badge from "../../components/ui/Badge";
@@ -24,6 +23,7 @@ import { toast } from "../../utils/toast";
 
 export function SettingsPage() {
   const { user } = useAuthStore();
+  const { theme, setTheme } = useUIStore();
   const isAdmin = user?.role === "Admin";
   const queryClient = useQueryClient();
 
@@ -31,7 +31,6 @@ export function SettingsPage() {
   const [orderAlerts, setOrderAlerts] = useState(true);
   const [attendanceAlerts, setAttendanceAlerts] = useState(true);
   const [autoCheckOutReminder, setAutoCheckOutReminder] = useState(true);
-  const [theme, setTheme] = useState("Light");
 
   // Branch Geofence Management State
   const [editingBranch, setEditingBranch] = useState(null);
@@ -483,36 +482,36 @@ export function SettingsPage() {
                 onClick={() => setTheme("Light")}
                 className={`p-4 rounded-xl border flex flex-col items-center justify-center gap-2 cursor-pointer transition-all ${
                   theme === "Light"
-                    ? "border-rose-500 bg-rose-50/50 shadow-2xs"
-                    : "border-slate-200 bg-white hover:bg-slate-50"
+                    ? "border-rose-500 bg-rose-50/70 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 shadow-2xs"
+                    : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-800 dark:text-slate-200"
                 }`}
               >
-                <Sun className="h-5 w-5 text-rose-600" />
-                <span className="font-bold text-slate-800">Light (Default)</span>
+                <Sun className="h-5 w-5 text-rose-600 dark:text-rose-400" />
+                <span className="font-bold">Light (Default)</span>
               </div>
 
               <div
                 onClick={() => setTheme("System")}
                 className={`p-4 rounded-xl border flex flex-col items-center justify-center gap-2 cursor-pointer transition-all ${
                   theme === "System"
-                    ? "border-rose-500 bg-rose-50/50 shadow-2xs"
-                    : "border-slate-200 bg-white hover:bg-slate-50"
+                    ? "border-rose-500 bg-rose-50/70 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 shadow-2xs"
+                    : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-800 dark:text-slate-200"
                 }`}
               >
-                <Laptop className="h-5 w-5 text-slate-600" />
-                <span className="font-bold text-slate-800">System Sync</span>
+                <Laptop className="h-5 w-5 text-slate-600 dark:text-slate-300" />
+                <span className="font-bold">System Sync</span>
               </div>
 
               <div
                 onClick={() => setTheme("Dark")}
-                className={`p-4 rounded-xl border flex flex-col items-center justify-center gap-2 opacity-60 cursor-not-allowed ${
+                className={`p-4 rounded-xl border flex flex-col items-center justify-center gap-2 cursor-pointer transition-all ${
                   theme === "Dark"
-                    ? "border-rose-500 bg-rose-50/50 shadow-2xs"
-                    : "border-slate-200 bg-white"
+                    ? "border-rose-500 bg-rose-50/70 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 shadow-2xs"
+                    : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-800 dark:text-slate-200"
                 }`}
               >
-                <Moon className="h-5 w-5 text-slate-400" />
-                <span className="font-medium text-slate-400">Dark (Coming soon)</span>
+                <Moon className="h-5 w-5 text-indigo-500 dark:text-indigo-400" />
+                <span className="font-bold">Dark Mode</span>
               </div>
             </div>
           </div>

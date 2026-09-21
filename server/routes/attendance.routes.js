@@ -32,15 +32,15 @@ router.get("/settings", protect, getAttendanceSettings);
 
 router.put("/settings/branch-location", protect, authorize("Admin"), updateBranchLocation);
 
-router.get("/admin", protect, authorize("Admin", "Branch Manager"), getAdminAttendanceReport);
+router.get("/admin", protect, authorize("Admin", "Branch Admin", "Branch Manager"), getAdminAttendanceReport);
 
 // Correction Request Flow
 router.get("/incomplete", protect, getIncompleteAttendance);
 router.post("/correction-request", protect, submitCorrectionRequest);
 router.get("/correction-requests/my", protect, getMyCorrectionRequests);
-router.get("/correction-requests", protect, authorize("Admin", "Branch Manager"), getAllCorrectionRequests);
-router.patch("/correction-requests/:id/approve", protect, authorize("Admin", "Branch Manager"), approveCorrectionRequest);
-router.patch("/correction-requests/:id/reject", protect, authorize("Admin", "Branch Manager"), rejectCorrectionRequest);
+router.get("/correction-requests", protect, authorize("Admin", "Branch Admin", "Branch Manager"), getAllCorrectionRequests);
+router.patch("/correction-requests/:id/approve", protect, authorize("Admin", "Branch Admin", "Branch Manager"), approveCorrectionRequest);
+router.patch("/correction-requests/:id/reject", protect, authorize("Admin", "Branch Admin", "Branch Manager"), rejectCorrectionRequest);
 
 export default router;
 

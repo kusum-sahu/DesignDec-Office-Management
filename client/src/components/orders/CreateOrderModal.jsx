@@ -30,8 +30,7 @@ export function CreateOrderModal({
   isAdmin: propIsAdmin,
 }) {
   const { user } = useAuthStore();
-  const isAdmin = propIsAdmin !== undefined ? propIsAdmin : user?.role === "Admin";
-  const assignedBranch = user?.branch || defaultBranch || "Main Office";
+  const assignedBranch = !isAdmin ? (user?.branch || "Santoshpur Branch") : (user?.branch || defaultBranch || "Main Office");
 
   const [formData, setFormData] = useState({
     customerName: "",

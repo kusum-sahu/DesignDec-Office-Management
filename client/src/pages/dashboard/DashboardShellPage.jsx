@@ -22,8 +22,16 @@ export function DashboardShellPage() {
   const [isCreateOrderModalOpen, setIsCreateOrderModalOpen] = useState(false);
 
   const isAdmin = user?.role === "Admin";
+  const isBranchAdmin =
+    user?.role === "Branch Admin" ||
+    user?.role === "Branch Manager" ||
+    (user?.role !== "Admin" && /^\s*branch\s*(admin|man?ager)\s*$/i.test(user?.designation || ""));
+  const isPrivileged = isAdmin || isBranchAdmin;
 
-  // Dashboard Stats Query (Admin / Branch Manager)
+  // Branch context: Admin uses selected activeBranch, Branch Admin uses assigned branch
+  const effectiveBranch = isAdmin ? activeBranch : user?.branch;
+
+  // Dashboard Stats Query (Admin / Branch Admin)
   const {
     data: dashboardResponse,
     isLoading: isDashboardLoading,
@@ -31,17 +39,32 @@ export function DashboardShellPage() {
     error: dashboardError,
     refetch: refetchDashboard,
   } = useQuery({
-    queryKey: ["dashboard-stats", activeBranch],
+    queryKey: ["dashboard-stats", effectiveBranch],
     queryFn: () =>
-      dashboardApi.getStatistics(activeBranch ? { branch: activeBranch } : {}),
-    enabled: isAdmin,
+      dashboardApi.getStatistics(isAdmin && activeBranch ? { branch: activeBranch } : {}),
+    enabled: isPrivileged,
+  });
+
+  // Pending Correction Requests Query for Admin / Branch Admin Dashboard
+  const {
+    data: pendingCorrectionsResponse,
+    refetch: refetchPendingCorrections,
+  } = useQuery({
+    queryKey: ["admin-pending-corrections", effectiveBranch],
+    queryFn: () =>
+      attendanceApi.getAllCorrectionRequests({
+        status: "Pending",
+        branch: isAdmin ? (activeBranch || undefined) : user?.branch,
+        limit: 10,
+      }),
+    enabled: isPrivileged,
   });
 
   // Employee Specific Queries (Orders, Attendance History, Notifications)
   const { data: employeeOrdersData } = useQuery({
-    queryKey: ["employee-orders"],
-    queryFn: () => orderApi.getOrders({ limit: 10 }),
-    enabled: !isAdmin,
+    queryKey: ["employee-orders", user?.branch],
+    queryFn: () => orderApi.getOrders({ limit: 10, branch: user?.branch || undefined }),
+    enabled: !isPrivileged,
   });
 
   // Dedicated Today Attendance Query (Single Source of Truth)
@@ -92,7 +115,7 @@ export function DashboardShellPage() {
 
   return (
     <div className="space-y-6 animate-in fade-in-50 duration-300">
-      {isAdmin ? (
+      {isPrivileged ? (
         isDashboardLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4.5 pt-4">
             <CardSkeleton />
@@ -109,8 +132,17 @@ export function DashboardShellPage() {
         ) : (
           <AdminDashboardView
             stats={dashboardResponse?.data}
-            activeBranch={activeBranch}
+            activeBranch={effectiveBranch}
             onOpenNewOrder={() => setIsCreateOrderModalOpen(true)}
+            pendingCorrections={pendingCorrectionsResponse?.data || []}
+            onCorrectionAction={() => {
+              refetchPendingCorrections();
+              refetchDashboard();
+              queryClient.invalidateQueries({ queryKey: ["admin-pending-corrections"] });
+              queryClient.invalidateQueries({ queryKey: ["admin-correction-requests"] });
+              queryClient.invalidateQueries({ queryKey: ["today-attendance-list"] });
+              queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+            }}
           />
         )
       ) : (
@@ -142,7 +174,8 @@ export function DashboardShellPage() {
         isOpen={isCreateOrderModalOpen}
         onClose={() => setIsCreateOrderModalOpen(false)}
         onSuccess={handleOrderCreated}
-        defaultBranch={user?.branch || "Main Office"}
+        defaultBranch={!isAdmin ? (user?.branch || "Santoshpur Branch") : (activeBranch || "Main Office")}
+        isAdmin={isAdmin}
       />
     </div>
   );

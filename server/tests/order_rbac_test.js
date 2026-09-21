@@ -3,10 +3,12 @@ dotenv.config();
 
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
+import connectDB from "../config/db.js";
 import User from "../models/User.js";
 import Order from "../models/Order.js";
+import { syncCounterWithExistingOrders } from "../utils/orderNumberGenerator.js";
 
-const BASE_URL = `http://localhost:${process.env.PORT || 5000}`;
+const BASE_URL = `http://127.0.0.1:${process.env.PORT || 5000}`;
 
 const generateTestToken = (userId) => {
   return jwt.sign({ id: userId }, process.env.JWT_SECRET, { expiresIn: "1d" });
@@ -17,7 +19,7 @@ async function runRbacTests() {
   console.log("🧪 RUNNING COMPREHENSIVE ORDER MANAGEMENT RBAC TESTS");
   console.log("=================================================");
 
-  await mongoose.connect(process.env.MONGO_URI);
+  await connectDB();
   console.log("Connected to MongoDB for test fixtures.");
 
   let passed = 0;
@@ -483,7 +485,9 @@ async function runRbacTests() {
     const testIdsToClean = [adminCreatedOrderId, createdOrderId, empCreatedOrderId].filter(Boolean);
     if (testIdsToClean.length > 0) {
       await Order.deleteMany({ _id: { $in: testIdsToClean } });
-      console.log(`Cleaned up ${testIdsToClean.length} test order(s) from database.`);
+      await syncCounterWithExistingOrders("DDS", true);
+      await syncCounterWithExistingOrders("DDB", true);
+      console.log(`Cleaned up ${testIdsToClean.length} test order(s) and resynchronized counters.`);
     }
 
     if (failed > 0) {

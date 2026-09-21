@@ -10,6 +10,7 @@ import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import User from "../models/User.js";
 import Order from "../models/Order.js";
+import { syncCounterWithExistingOrders } from "../utils/orderNumberGenerator.js";
 
 const BASE_URL = `http://127.0.0.1:${process.env.PORT || 5000}/api/v1`;
 
@@ -157,7 +158,9 @@ async function runCustomItemTypeTests() {
   } finally {
     if (createdOrderIds.length > 0) {
       await Order.deleteMany({ _id: { $in: createdOrderIds } });
-      console.log(`Cleaned up ${createdOrderIds.length} test order(s) from database.`);
+      await syncCounterWithExistingOrders("DDS", true);
+      await syncCounterWithExistingOrders("DDB", true);
+      console.log(`Cleaned up ${createdOrderIds.length} test order(s) and resynchronized counters.`);
     }
     await mongoose.disconnect();
     process.exit(failed > 0 ? 1 : 0);

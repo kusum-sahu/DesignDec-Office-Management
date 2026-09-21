@@ -29,11 +29,12 @@ export function AttendancePage() {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
   const isAdmin = user?.role === "Admin";
-  const isBranchManager =
+  const isBranchAdmin =
+    user?.role === "Branch Admin" ||
     user?.role === "Branch Manager" ||
-    (user?.role !== "Admin" && /^\s*branch\s*man?ager\s*$/i.test(user?.designation || ""));
+    (user?.role !== "Admin" && /^\s*branch\s*(admin|man?ager)\s*$/i.test(user?.designation || ""));
 
-  const [branchManagerMode, setBranchManagerMode] = useState("personal"); // "personal" | "branch"
+  const [branchAdminMode, setBranchAdminMode] = useState("branch"); // "branch" | "personal"
   const [isCheckInModalOpen, setIsCheckInModalOpen] = useState(false);
   const [selectedRecordForCorrection, setSelectedRecordForCorrection] = useState(null);
   const [selectedCorrectionForAudit, setSelectedCorrectionForAudit] = useState(null);
@@ -75,19 +76,19 @@ export function AttendancePage() {
 
   const myCorrections = myCorrectionsResponse?.data || [];
 
-  // If user is Admin, or Branch Manager viewing Branch Mode, render Admin Attendance Suite
-  if (isAdmin || (isBranchManager && branchManagerMode === "branch")) {
+  // If user is Admin, or Branch Admin viewing Branch Mode, render Admin Attendance Suite
+  if (isAdmin || (isBranchAdmin && branchAdminMode === "branch")) {
     return (
       <div className="space-y-4">
-        {isBranchManager && (
+        {isBranchAdmin && (
           <div className="flex items-center justify-between bg-white border border-rose-100 rounded-2xl p-3.5 px-5 shadow-2xs">
             <div className="flex items-center gap-2 text-xs text-slate-700 font-semibold">
               <Building2 className="h-4 w-4 text-rose-600" />
-              <span>Branch Management Mode • {user?.branch || "Santoshpur Branch"}</span>
+              <span>Branch Admin Mode • {user?.branch || "Santoshpur Branch"}</span>
             </div>
             <button
               type="button"
-              onClick={() => setBranchManagerMode("personal")}
+              onClick={() => setBranchAdminMode("personal")}
               className="text-xs font-bold text-rose-600 hover:text-rose-800 underline cursor-pointer"
             >
               Switch to My Personal Attendance View →
@@ -153,10 +154,10 @@ export function AttendancePage() {
         </div>
 
         <div className="flex items-center gap-2.5">
-          {isBranchManager && (
+          {isBranchAdmin && (
             <button
               type="button"
-              onClick={() => setBranchManagerMode("branch")}
+              onClick={() => setBranchAdminMode("branch")}
               className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-3.5 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100 transition-colors shadow-2xs cursor-pointer"
             >
               <Building2 className="h-3.5 w-3.5" />
